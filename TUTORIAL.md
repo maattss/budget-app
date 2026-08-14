@@ -1,7 +1,16 @@
 # Budget app — a ~4 hour Laravel/Livewire learning build
 
-> **Status (2026-08-14): Hour 1 complete, steps 1.1–1.5 done. Resume at Hour 2.**
+> **Status (2026-08-14): Hours 1–2 done, Hour 3 started. Resume at the cash-flow form
+> in Hour 3.**
 >
+> Hour 3 so far: `resources/views/pages/month/⚡show.blade.php` exists with `year`/`month`
+> state, `mount()`, and `previousMonth()`/`nextMonth()` using Carbon, routed as
+> `month.show` and linked in the sidebar. **Mats wrote these himself** — from here on he
+> writes the component code and Claude reviews it, rather than Claude writing it.
+> Still to do in Hour 3: `#[Url]` on the month state, the cash-flow form with
+> `updateOrCreate`, the per-asset value inputs, and the `#[Computed]` net worth.
+>
+
 > - **1.1 done** — `savings` column removed from the `monthly_finances` migration;
 >   `php artisan migrate:fresh` run against MySQL, schema rebuilt clean.
 > - **1.2 done** — `savings` dropped from `$fillable` and `casts()` on

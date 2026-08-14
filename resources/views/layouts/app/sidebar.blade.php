@@ -19,6 +19,10 @@
                     <flux:sidebar.item icon="wallet" :href="route('assets.index')" :current="request()->routeIs('assets.*')" wire:navigate>
                         {{ __('Assets') }}
                     </flux:sidebar.item>
+
+                    <flux:sidebar.item icon="calendar" :href="route('month.show')" :current="request()->routeIs('month.*')" wire:navigate>
+                        {{ __('Month') }}
+                    </flux:sidebar.item>
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 
