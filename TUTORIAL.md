@@ -1,6 +1,6 @@
 # Budget app — a ~4 hour Laravel/Livewire learning build
 
-> **Status (2026-08-13, end of session 2): steps 1.1–1.3 done. Resume at step 1.4.**
+> **Status (2026-08-14): Hour 1 complete, steps 1.1–1.5 done. Resume at Hour 2.**
 >
 > - **1.1 done** — `savings` column removed from the `monthly_finances` migration;
 >   `php artisan migrate:fresh` run against MySQL, schema rebuilt clean.
@@ -13,7 +13,18 @@
 >   Enums/AssetType --string` — note the `Enums/` prefix is required, otherwise it lands
 >   in `app/`). Eight string-backed cases, `label()` and `isLiability()`, both `match`
 >   expressions with **no `default` branch** so a new case forces an explicit decision.
-> - Pint and PHPStan (level 7) both pass clean. Nothing committed yet.
+> - **1.4 done** — `assets` and `asset_values` migrations, `Asset` and `AssetValue`
+>   models, `assets()` relation on `User`. Applied with `php artisan migrate` (additive,
+>   no rebuild needed — unlike 1.1, which edited an existing migration).
+> - **1.5 done** — `AssetFactory` with `ofType()` and `liability()` states. Seeded
+>   `test@example.com` (password `password`) with 5 assets × 3 months of values and 3
+>   months of cash flow, via a throwaway Tinker script. Note `HasFactory` is opt-in per
+>   model: `Asset::factory()` fails without the trait even when the factory exists.
+> - The N+1 demo from step 4.3 was pulled forward while relations were fresh: looping
+>   assets and reading `->values` inside the loop costs 6 queries, `with('values')` costs
+>   2. Also worth remembering that `values()->count()` and `values->count()` are both a
+>   single query — the difference is payload and PHP memory, not query count.
+> - Pint and PHPStan (level 7) both pass clean. Steps 1.1–1.4 are committed and pushed.
 >
 > **Local gotcha:** PHPStan OOMs at PHP's default 128 MB `memory_limit`. Run it as
 > `vendor/bin/phpstan analyse --memory-limit=1G` (or raise the limit in php.ini) —
