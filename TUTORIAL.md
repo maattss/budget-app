@@ -1,14 +1,26 @@
 # Budget app — a ~4 hour Laravel/Livewire learning build
 
-> **Status (2026-08-14): Hours 1–2 done, Hour 3 started. Resume at the cash-flow form
-> in Hour 3.**
+> **Status (2026-08-17): Hours 1–2 done, Hour 3 mostly done. Resume at the per-asset
+> value inputs in Hour 3.**
 >
-> Hour 3 so far: `resources/views/pages/month/⚡show.blade.php` exists with `year`/`month`
-> state, `mount()`, and `previousMonth()`/`nextMonth()` using Carbon, routed as
-> `month.show` and linked in the sidebar. **Mats wrote these himself** — from here on he
-> writes the component code and Claude reviews it, rather than Claude writing it.
-> Still to do in Hour 3: `#[Url]` on the month state, the cash-flow form with
-> `updateOrCreate`, the per-asset value inputs, and the `#[Computed]` net worth.
+> `resources/views/pages/month/⚡show.blade.php` now has `#[Url]`-synced `year`/`month`,
+> month navigation, and a working cash-flow form: `loadCashFlow()`, `saveCashFlow()` with
+> validation and a relation-scoped `updateOrCreate`, and `savings` as `#[Computed]`.
+> **Mats writes the component logic himself and Claude reviews** — Claude scaffolds files
+> and method signatures only.
+>
+> Still to do in Hour 3: one value input per asset writing to `asset_values`, and the
+> `#[Computed]` net worth total.
+>
+> **Two things learned the hard way, worth not rediscovering:**
+> - `#[Url]` properties are hydrated from the query string **before** `mount()` runs, so
+>   an unconditional `$this->month = now()->month` in `mount()` silently discards the URL
+>   value. Use `??=`. Verified with `Livewire::withQueryParams()`.
+> - PhpStorm flags `updateOrCreate(['year' => ...])` as "attribute 'year' is guarded"
+>   even though it is in `$fillable`. False positive: neither the IDE nor PHPStan can
+>   resolve types inside an SFC, because the file is not valid PHP until Livewire compiles
+>   it. In SFCs, both warnings and the absence of warnings are unreliable — component
+>   tests are the only real safety net.
 >
 
 > - **1.1 done** — `savings` column removed from the `monthly_finances` migration;
