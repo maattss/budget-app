@@ -1,6 +1,9 @@
 <?php
 
+use App\Models\Asset;
+use App\Models\AssetValue;
 use App\Models\MonthlyFinance;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
@@ -20,6 +23,13 @@ new #[Title('Month')] class extends Component {
     public string $spending = '';
 
     /**
+     * This month's value per asset, keyed by asset id.
+     *
+     * @var array<int, string>
+     */
+    public array $values = [];
+
+    /**
      * Start on the current month.
      */
     public function mount(): void
@@ -30,6 +40,7 @@ new #[Title('Month')] class extends Component {
         $this->month ??= $now->month;
 
         $this->loadCashFlow();
+        $this->loadAssetValues();
     }
 
     /**
@@ -43,6 +54,7 @@ new #[Title('Month')] class extends Component {
         $this->month = $date->month;
 
         $this->loadCashFlow();
+        $this->loadAssetValues();
     }
 
     /**
@@ -56,6 +68,7 @@ new #[Title('Month')] class extends Component {
         $this->month = $date->month;
 
         $this->loadCashFlow();
+        $this->loadAssetValues();
     }
 
     /**
@@ -88,6 +101,7 @@ new #[Title('Month')] class extends Component {
         );
 
         $this->loadCashFlow();
+        $this->loadAssetValues();
 
         Flux::toast(text: __('Saved!'), variant: 'success');
     }
@@ -99,6 +113,78 @@ new #[Title('Month')] class extends Component {
     public function savings(): float
     {
         return (float) $this->income - (float) $this->spending;
+    }
+
+    /**
+     * The current user's assets, in a stable display order.
+     *
+     * @return Collection<int, Asset>
+     */
+    #[Computed]
+    public function assets(): Collection
+    {
+        return Auth::user()->assets()->orderBy('name')->get();
+    }
+
+    /**
+     * Fill $values from asset_values for the selected month.
+     */
+    public function loadAssetValues(): void
+    {
+        $stored = AssetValue::whereIn('asset_id', $this->assets->pluck('id'))
+            ->where('year', $this->year)
+            ->where('month', $this->month)
+            ->pluck('value', 'asset_id');
+
+        $this->values = $this->assets
+            ->mapWithKeys(fn (Asset $asset) => [$asset->id => $stored->get($asset->id, '')])
+            ->all();
+    }
+
+    /**
+     * Store this month's value for every asset in the form.
+     */
+    public function saveAssetValues(): void
+    {
+        $this->validate([
+            'values.*' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        foreach ($this->assets as $asset) {
+            $assetValue = $this->values[$asset->id] ?? '';
+
+            if($assetValue  === '') {
+                continue;
+            }
+
+            $asset->values()->updateOrCreate(
+                ['year' => $this->year, 'month' => $this->month],
+                ['value' => $assetValue ]
+            );
+        }
+
+        $this->loadAssetValues();
+
+        Flux::toast(text: __('Values saved!'), variant: 'success');
+    }
+
+    /**
+     * Assets minus liabilities, for the numbers currently in the form.
+     */
+    #[Computed]
+    public function netWorth(): float
+    {
+        $netWorth = 0;
+        foreach ($this->assets as $asset) {
+            $assetValue = $this->values[$asset->id] ?? '';
+            if($asset->type->isLiability()){
+                $netWorth = $netWorth - (float) $assetValue;
+            } else {
+                $netWorth = $netWorth + (float) $assetValue;
+            }
+        }
+
+        return $netWorth;
     }
 }; ?>
 
@@ -127,4 +213,47 @@ new #[Title('Month')] class extends Component {
             <flux:button variant="primary" type="submit">{{ __('Save') }}</flux:button>
         </div>
     </form>
+
+    <div class="mt-12">
+        <flux:heading>{{ __('Asset values') }}</flux:heading>
+        <flux:subheading>{{ __('What each asset was worth this month.') }}</flux:subheading>
+
+        @if ($this->assets->isEmpty())
+            <flux:text class="mt-2">
+                {{ __('No assets yet.') }}
+                <flux:link :href="route('assets.index')" wire:navigate>{{ __('Add one first.') }}</flux:link>
+            </flux:text>
+        @else
+        <form wire:submit="saveAssetValues" class="mt-4 space-y-4">
+            <flux:table>
+                <flux:table.columns>
+                    <flux:table.column>{{ __('Asset') }}</flux:table.column>
+                    <flux:table.column>{{ __('Type') }}</flux:table.column>
+                    <flux:table.column>{{ __('Value') }}</flux:table.column>
+                </flux:table.columns>
+
+                <flux:table.rows>
+                    @foreach ($this->assets as $asset)
+                        <flux:table.row :key="$asset->id">
+                            <flux:table.cell variant="strong">{{ $asset->name }}</flux:table.cell>
+                            <flux:table.cell>{{ $asset->type->label() }}</flux:table.cell>
+                            <flux:table.cell>
+                                <flux:input wire:model="values.{{ $asset->id }}" inputmode="decimal" size="sm" />
+                            </flux:table.cell>
+                        </flux:table.row>
+                    @endforeach
+                </flux:table.rows>
+            </flux:table>
+
+            <div class="flex items-center justify-between">
+                <flux:text>
+                    {{ __('Net worth') }}:
+                    <span class="font-medium">{{ number_format($this->netWorth, 2, ',', ' ') }}</span>
+                </flux:text>
+
+                <flux:button variant="primary" type="submit">{{ __('Save values') }}</flux:button>
+            </div>
+        </form>
+        @endif
+    </div>
 </section>

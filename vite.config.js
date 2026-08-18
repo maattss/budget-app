@@ -23,6 +23,11 @@ export default defineConfig({
         tailwindcss(),
     ],
     server: {
+        // Without this, Vite binds to the IPv6 loopback and writes
+        // http://[::1]:5173 into public/hot. Asset URLs then point at a
+        // different origin than the app, which the browser blocks - the page
+        // renders with no CSS at all and no visible error.
+        host: 'localhost',
         cors: true,
         watch: {
             ignored: ['**/storage/framework/views/**'],

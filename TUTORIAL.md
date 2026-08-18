@@ -1,16 +1,23 @@
 # Budget app — a ~4 hour Laravel/Livewire learning build
 
-> **Status (2026-08-17): Hours 1–2 done, Hour 3 mostly done. Resume at the per-asset
-> value inputs in Hour 3.**
+> **Status (2026-08-18): Hours 1–3 complete. Resume at Hour 4.**
 >
-> `resources/views/pages/month/⚡show.blade.php` now has `#[Url]`-synced `year`/`month`,
-> month navigation, and a working cash-flow form: `loadCashFlow()`, `saveCashFlow()` with
-> validation and a relation-scoped `updateOrCreate`, and `savings` as `#[Computed]`.
-> **Mats writes the component logic himself and Claude reviews** — Claude scaffolds files
-> and method signatures only.
+> `resources/views/pages/month/⚡show.blade.php` is finished: `#[Url]`-synced
+> `year`/`month`, month navigation, the cash-flow form (`loadCashFlow`,
+> `saveCashFlow`, `savings`), per-asset value inputs (`assets`, `loadAssetValues`,
+> `saveAssetValues`) and `netWorth`. **Mats writes the component logic himself and Claude
+> reviews** — Claude scaffolds files and method signatures only.
 >
-> Still to do in Hour 3: one value input per asset writing to `asset_values`, and the
-> `#[Computed]` net worth total.
+> Hour 4 remains: dashboard as a Livewire component, one Pest test, sidebar nav (already
+> done for both pages). The N+1 demo and the auth-scoping lesson from 4.3 have both
+> already been covered.
+>
+> **The auth-scoping point landed for real in `saveAssetValues()`:** the keys of
+> `$this->values` come from the client, so iterating `$this->values` would let anyone
+> write to another user's asset. Iterating `$this->assets` — which comes from
+> `Auth::user()->assets()` — makes a forged id simply never match. Verified with a test
+> that injected a foreign asset id: zero rows written. The rule worth keeping: never let
+> the client decide which rows you iterate over; use its input only to look up values.
 >
 > **Two things learned the hard way, worth not rediscovering:**
 > - `#[Url]` properties are hydrated from the query string **before** `mount()` runs, so

@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\AssetType;
+use App\Models\Asset;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -9,7 +10,8 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('Assets')] class extends Component {
+new #[Title('Assets')]
+class extends Component {
     public string $name = '';
 
     public string $type = '';
@@ -17,23 +19,23 @@ new #[Title('Assets')] class extends Component {
     /**
      * The things the user owns.
      *
-     * @return Collection<int, \App\Models\Asset>
+     * @return Collection<int, Asset>
      */
     #[Computed]
     public function assets(): Collection
     {
-        return $this->allAssets()->reject(fn ($asset) => $asset->type->isLiability());
+        return $this->allAssets()->reject(fn($asset) => $asset->type->isLiability());
     }
 
     /**
      * The things the user owes.
      *
-     * @return Collection<int, \App\Models\Asset>
+     * @return Collection<int, Asset>
      */
     #[Computed]
     public function liabilities(): Collection
     {
-        return $this->allAssets()->filter(fn ($asset) => $asset->type->isLiability());
+        return $this->allAssets()->filter(fn($asset) => $asset->type->isLiability());
     }
 
     /**
@@ -52,7 +54,7 @@ new #[Title('Assets')] class extends Component {
 
         unset($this->allAssets, $this->assets, $this->liabilities);
 
-        Flux::toast(variant: 'success', text: __('Asset added.'));
+        Flux::toast(text: __('Asset added.'), variant: 'success');
     }
 
     /**
@@ -64,13 +66,13 @@ new #[Title('Assets')] class extends Component {
 
         unset($this->allAssets, $this->assets, $this->liabilities);
 
-        Flux::toast(variant: 'success', text: __('Asset deleted.'));
+        Flux::toast(text: __('Asset deleted.'), variant: 'success');
     }
 
     /**
      * Every asset belonging to the current user, loaded once per request.
      *
-     * @return Collection<int, \App\Models\Asset>
+     * @return Collection<int, Asset>
      */
     #[Computed]
     protected function allAssets(): Collection
@@ -84,7 +86,7 @@ new #[Title('Assets')] class extends Component {
     <flux:subheading>{{ __('What you own and what you owe. Values are entered per month.') }}</flux:subheading>
 
     <form wire:submit="save" class="mt-6 flex items-start gap-3">
-        <flux:input wire:model="name" :label="__('Name')" class="flex-1" />
+        <flux:input wire:model="name" :label="__('Name')" class="flex-1"/>
 
         <flux:select wire:model="type" :label="__('Type')" :placeholder="__('Choose a type')" class="w-56">
             @foreach (AssetType::cases() as $assetType)
@@ -109,7 +111,7 @@ new #[Title('Assets')] class extends Component {
                         <flux:table.columns>
                             <flux:table.column>{{ __('Name') }}</flux:table.column>
                             <flux:table.column>{{ __('Type') }}</flux:table.column>
-                            <flux:table.column />
+                            <flux:table.column/>
                         </flux:table.columns>
 
                         <flux:table.rows>
