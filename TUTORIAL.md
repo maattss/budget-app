@@ -1,6 +1,21 @@
 # Budget app — a ~4 hour Laravel/Livewire learning build
 
-> **Status (2026-08-18): Hours 1–3 complete. Resume at Hour 4.**
+> **Status (2026-08-18): Hours 1–3 complete. Hour 4 started — resume by finishing the
+> dashboard's computed methods.**
+>
+> **Uncommitted work in progress:** `resources/views/pages/⚡dashboard.blade.php` exists
+> with finished markup, the route now points at it (`Route::livewire('dashboard',
+> 'pages::dashboard')`), and the old static `resources/views/dashboard.blade.php` is
+> deleted. Four `#[Computed]` methods are still stubs returning empty values:
+> `currentMonth()` (Mats started it; needs `now()->year` / `now()->month` rather than
+> `now()` and a non-existent `$this->month`), `netWorth()`, `assets()` and
+> `recentMonths()`. The page renders and the suite passes, it just shows zeros.
+>
+> Write `assets()` **without** `->with()` first, count the queries, then add eager
+> loading — the point of step 4.3 is to see N+1 on his own code rather than on a demo.
+>
+> After that, only the kept Pest test (4.2) remains.
+
 >
 > `resources/views/pages/month/⚡show.blade.php` is finished: `#[Url]`-synced
 > `year`/`month`, month navigation, the cash-flow form (`loadCashFlow`,
