@@ -46,8 +46,15 @@ class CreateUser extends Command
 
     public function handle(): int
     {
-        $name = $this->stringOption('name') ?? text('Name', required: true);
-        $email = $this->stringOption('email') ?? text('Email', required: true);
+        // Prompting is only safe when something is there to answer. A remote command
+        // runner has no TTY, and Laravel Prompts throws NonInteractiveValidationException
+        // ("Required.") on a required prompt - an error that says nothing about which
+        // input was missing or how to supply it. So when input is non-interactive,
+        // collect what is missing and report it properly instead.
+        $interactive = $this->input->isInteractive();
+
+        $name = $this->stringOption('name');
+        $email = $this->stringOption('email');
 
         // Prefer an environment variable over a flag: anything passed on a command line
         // may be recorded by the host's command log or shell history.
@@ -56,9 +63,32 @@ class CreateUser extends Command
         // which Laravel never loads .env and the env() helper returns null. getenv()
         // reads the actual process environment, which is where a host like Laravel Cloud
         // injects its variables, so it keeps working with a cached config.
-        $password = $this->stringOption('password')
-            ?? (getenv('INITIAL_USER_PASSWORD') ?: null)
-            ?? promptPassword('Password', required: true);
+        $password = $this->stringOption('password') ?? (getenv('INITIAL_USER_PASSWORD') ?: null);
+
+        if (! $interactive) {
+            $missing = array_keys(array_filter([
+                '--name' => $name === null,
+                '--email' => $email === null,
+                '--password (or the INITIAL_USER_PASSWORD environment variable)' => $password === null,
+            ]));
+
+            if ($missing !== []) {
+                $this->components->error('Cannot prompt for input here, and these are missing: '.implode(', ', $missing).'.');
+                $this->line('');
+                $this->line('  Pass them as flags, for example:');
+                $this->line('    <fg=gray>php artisan app:create-user --name="Your Name" --email="you@example.com"</>');
+                $this->line('');
+                $this->line('  The password is read from INITIAL_USER_PASSWORD when --password is omitted.');
+                $this->line('  If you set that variable on the host, the app may need a redeploy or restart');
+                $this->line('  before the running process can see it.');
+
+                return self::FAILURE;
+            }
+        }
+
+        $name ??= text('Name', required: true);
+        $email ??= text('Email', required: true);
+        $password ??= promptPassword('Password', required: true);
 
         $validator = Validator::make(
             ['name' => $name, 'email' => $email, 'password' => $password],

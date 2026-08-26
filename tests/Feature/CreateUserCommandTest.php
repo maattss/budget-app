@@ -99,3 +99,39 @@ test('it reads the password from the environment when no flag is given', functio
 
     putenv('INITIAL_USER_PASSWORD');
 });
+
+test('a missing password without a TTY reports what is missing instead of throwing', function () {
+    // Laravel Prompts throws NonInteractiveValidationException("Required.") on a
+    // required prompt with no TTY - which is what a remote command runner is. That
+    // error names neither the missing input nor the fix, so the command has to check
+    // for itself. Nightwatch caught exactly this in production.
+    $this->artisan('app:create-user', [
+        '--name' => 'Mats',
+        '--email' => 'mats@example.test',
+        '--no-interaction' => true,
+    ])
+        ->expectsOutputToContain('INITIAL_USER_PASSWORD')
+        ->assertFailed();
+
+    expect(User::where('email', 'mats@example.test')->exists())->toBeFalse();
+});
+
+test('it names every missing input at once, not just the first', function () {
+    // One assertion, not two: expectsOutputToContain() consumes the line it matched,
+    // so a second substring on that same line can never match.
+    $this->artisan('app:create-user', ['--no-interaction' => true])
+        ->expectsOutputToContain('--name, --email, --password')
+        ->assertFailed();
+});
+
+test('it succeeds without a TTY when every input is supplied', function () {
+    // The whole point of the flags: this is the path a remote runner takes.
+    $this->artisan('app:create-user', [
+        '--name' => 'Mats',
+        '--email' => 'mats@example.test',
+        '--password' => 'a-long-enough-password',
+        '--no-interaction' => true,
+    ])->assertSuccessful();
+
+    expect(User::where('email', 'mats@example.test')->sole()->email_verified_at)->not->toBeNull();
+});
