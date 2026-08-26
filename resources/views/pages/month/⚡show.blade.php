@@ -153,7 +153,7 @@ new #[Title('Month')] class extends Component {
         foreach ($this->assets as $asset) {
             $assetValue = $this->values[$asset->id] ?? '';
 
-            if($assetValue  === '') {
+            if ($assetValue  === '') {
                 continue;
             }
 
@@ -177,7 +177,7 @@ new #[Title('Month')] class extends Component {
         $netWorth = 0;
         foreach ($this->assets as $asset) {
             $assetValue = $this->values[$asset->id] ?? '';
-            if($asset->type->isLiability()){
+            if ($asset->type->isLiability()) {
                 $netWorth = $netWorth - (float) $assetValue;
             } else {
                 $netWorth = $netWorth + (float) $assetValue;

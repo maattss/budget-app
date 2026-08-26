@@ -1,31 +1,31 @@
 # Budget app — a ~4 hour Laravel/Livewire learning build
 
-> **Status (2026-08-18): Hours 1–3 complete. Hour 4 started — resume by finishing the
-> dashboard's computed methods.**
+> **Status (2026-08-26): Hours 1–3 complete. Hour 4 all but done — the dashboard,
+> the nav and the N+1 demo are finished; two `->todo()` tests in
+> `tests/Feature/MonthTest.php` are the only work left.**
 >
-> **Uncommitted work in progress:** `resources/views/pages/⚡dashboard.blade.php` exists
-> with finished markup, the route now points at it (`Route::livewire('dashboard',
-> 'pages::dashboard')`), and the old static `resources/views/dashboard.blade.php` is
-> deleted. Four `#[Computed]` methods are still stubs returning empty values:
-> `currentMonth()` (Mats started it; needs `now()->year` / `now()->month` rather than
-> `now()` and a non-existent `$this->month`), `netWorth()`, `assets()` and
-> `recentMonths()`. The page renders and the suite passes, it just shows zeros.
+> **4.1 done** — `resources/views/pages/⚡dashboard.blade.php` is a working Livewire
+> SFC with all four `#[Computed]` methods (`currentMonth`, `netWorth`, `assets`,
+> `recentMonths`); the route is `Route::livewire('dashboard', 'pages::dashboard')` and
+> the old static `resources/views/dashboard.blade.php` is deleted. Sidebar nav entries
+> exist for dashboard, assets and month.
 >
-> Write `assets()` **without** `->with()` first, count the queries, then add eager
-> loading — the point of step 4.3 is to see N+1 on his own code rather than on a demo.
+> **4.2 scaffolded** — `tests/Feature/MonthTest.php` has the cash-flow test from the
+> plan passing, plus two `->todo()` stubs to fill in: the `#[Url]` hydration check
+> (`Livewire::withQueryParams()`) and the auth-scoping check (forged asset id writes
+> zero rows). Both were proved by hand in an earlier session but never kept as tests.
 >
-> After that, only the kept Pest test (4.2) remains.
-
+> **4.3 done** — N+1 measured on Mats's own dashboard, not a demo: `netWorth()` touching
+> `$asset->values` per asset costs **6 queries** for 5 assets; the constrained eager load
+> `with(['values' => fn ($q) => $q->where('year', ...)->where('month', ...)])` collapses
+> it to **2**, the second being a single `where asset_id in (1,2,3,4,5)`. Auth scoping was
+> covered earlier (see below). Only `Model::preventLazyLoading()` is left to look at.
 >
 > `resources/views/pages/month/⚡show.blade.php` is finished: `#[Url]`-synced
 > `year`/`month`, month navigation, the cash-flow form (`loadCashFlow`,
 > `saveCashFlow`, `savings`), per-asset value inputs (`assets`, `loadAssetValues`,
 > `saveAssetValues`) and `netWorth`. **Mats writes the component logic himself and Claude
 > reviews** — Claude scaffolds files and method signatures only.
->
-> Hour 4 remains: dashboard as a Livewire component, one Pest test, sidebar nav (already
-> done for both pages). The N+1 demo and the auth-scoping lesson from 4.3 have both
-> already been covered.
 >
 > **The auth-scoping point landed for real in `saveAssetValues()`:** the keys of
 > `$this->values` come from the client, so iterating `$this->values` would let anyone
@@ -34,16 +34,42 @@
 > that injected a foreign asset id: zero rows written. The rule worth keeping: never let
 > the client decide which rows you iterate over; use its input only to look up values.
 >
-> **Two things learned the hard way, worth not rediscovering:**
+> **Things learned the hard way, worth not rediscovering:**
 > - `#[Url]` properties are hydrated from the query string **before** `mount()` runs, so
 >   an unconditional `$this->month = now()->month` in `mount()` silently discards the URL
 >   value. Use `??=`. Verified with `Livewire::withQueryParams()`.
+> - **`#[Computed]` does not memoise `null`.** The memo cache is written with `??=`
+>   (`vendor/livewire/livewire/src/.../SupportComputed/BaseComputed.php:50` — and lines
+>   35 and 43, so the `persist:` and `cache:` variants have it too), which only
+>   assigns when the left side is null — so a computed returning `null` re-runs its query
+>   on *every* read. Measured on the dashboard: `currentMonth` is read 4× (three tiles +
+>   the `@unless`) and costs **4 queries when the month is empty, 1 when a row exists**.
+>   The empty dashboard is more expensive than the populated one, which is backwards from
+>   every caching intuition and is exactly the new-user path. Contrast `recentMonths`:
+>   an *empty Collection* is not null, so it memoises fine (2 reads, 1 query). Generalises
+>   past Livewire — `??=` as a cache-write can never cache a miss, and a miss is often the
+>   most-repeated lookup. Same trap one level down as `isset()` vs `array_key_exists()`.
+>   Left as-is deliberately: nullable reads better than a sentinel object, and four
+>   indexed lookups are noise. Worth knowing it is a *choice*.
 > - PhpStorm flags `updateOrCreate(['year' => ...])` as "attribute 'year' is guarded"
 >   even though it is in `$fillable`. False positive: neither the IDE nor PHPStan can
 >   resolve types inside an SFC, because the file is not valid PHP until Livewire compiles
 >   it. In SFCs, both warnings and the absence of warnings are unreliable — component
 >   tests are the only real safety net.
->
+> - **Receipt for that last point:** `phpstan.neon` lists only `app/ bootstrap/ config/
+>   database/ routes/` — **`resources/` is not analysed at all.** A clean level-7 run says
+>   nothing whatsoever about the SFCs. The untyped `fn ($query)` in the dashboard's eager
+>   load drew no complaint because nothing looked at it.
+> - Component tests cover the **component**, not the **template binding**. A typo in
+>   `wire:model="incom"` still passes every test, because `->set('income', ...)` bypasses
+>   the binding entirely.
+> - The suite runs on in-memory SQLite (`phpunit.xml:26-27`) while the app runs MySQL.
+>   Two divergences that matter here: MySQL's default `utf8mb4` collation is
+>   case-**in**sensitive where SQLite's `=` is case-sensitive (so `where('email', ...)`
+>   behaves differently); and SQLite has no real DECIMAL type — `decimal(14,2)` becomes
+>   NUMERIC affinity with **no scale enforcement**, which the `decimal:2` cast then masks
+>   on the way out. For a money app that is the divergence you would most want caught,
+>   and it is the one this setup structurally cannot catch.
 
 > - **1.1 done** — `savings` column removed from the `monthly_finances` migration;
 >   `php artisan migrate:fresh` run against MySQL, schema rebuilt clean.
