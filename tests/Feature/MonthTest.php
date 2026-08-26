@@ -2,6 +2,7 @@
 
 use App\Models\Asset;
 use App\Models\User;
+use App\Support\Money;
 use Livewire\Livewire;
 
 test('saving cash flow stores the row for the selected month', function () {
@@ -114,4 +115,75 @@ test('a forged asset id cannot write to another user\'s asset', function () {
 
     $this->assertDatabaseCount('asset_values', 1);   // blunt but effective
 
+});
+
+test('a grouped amount saves as the number it looks like', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    // What a user sees in the field, and what a paste from elsewhere in the app looks
+    // like. Without normalisation (float) '62 000' is 62.0, so this would either fail
+    // validation or store a wildly wrong figure.
+    Livewire::test('pages::month.show')
+        ->set('income', "62\u{00A0}000")
+        ->set('spending', '41 000')
+        ->call('saveCashFlow')
+        ->assertHasNoErrors();
+
+    $finance = $user->monthlyFinances()->sole();
+
+    expect((float) $finance->income)->toBe(62000.0)
+        ->and((float) $finance->spending)->toBe(41000.0)
+        ->and($finance->savings)->toBe(21000.0);
+});
+
+test('the live savings readout is right while a grouped number is being typed', function () {
+    $this->actingAs(User::factory()->create());
+
+    // The computed property runs on every keystroke, before any save. A bare cast here
+    // would render "Saved: 21 kr" for an income of 62 000 - wrong, and silently so.
+    Livewire::test('pages::month.show')
+        ->set('income', '62 000')
+        ->set('spending', '41 000')
+        // Money::kr() emits non-breaking spaces, so assert against the formatter rather
+        // than a literal with ordinary spaces - which is what made this test fail first.
+        ->assertSee(Money::kr(21000));
+});
+
+test('a grouped decimal keeps its fractional part', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    Livewire::test('pages::month.show')
+        ->set('income', '62 000,50')
+        ->set('spending', '0')
+        ->call('saveCashFlow')
+        ->assertHasNoErrors();
+
+    expect((float) $user->monthlyFinances()->sole()->income)->toBe(62000.50);
+});
+
+test('grouped asset values save correctly too', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $asset = Asset::factory()->for($user)->create();
+
+    Livewire::test('pages::month.show')
+        ->set('values', [$asset->id => '4 250 000'])
+        ->call('saveAssetValues')
+        ->assertHasNoErrors();
+
+    expect((float) $asset->values()->sole()->value)->toBe(4250000.0);
+});
+
+test('genuinely non-numeric input is still rejected', function () {
+    $this->actingAs(User::factory()->create());
+
+    // Normalisation must not be so eager that it invents a number out of nonsense.
+    Livewire::test('pages::month.show')
+        ->set('income', 'not a number')
+        ->set('spending', '0')
+        ->call('saveCashFlow')
+        ->assertHasErrors(['income' => 'numeric']);
 });

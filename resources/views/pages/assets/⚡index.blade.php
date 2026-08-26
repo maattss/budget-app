@@ -141,9 +141,9 @@ class extends Component {
     <flux:subheading>{{ __('What you own and what you owe. Values are entered per month.') }}</flux:subheading>
 
     <div class="mt-6 grid gap-4 sm:grid-cols-3">
-        <x-stat-tile :label="__('Assets')" :value="$this->assetsTotal" :delta-label="__('latest recorded value')" />
-        <x-stat-tile :label="__('Liabilities')" :value="$this->liabilitiesTotal" :delta-label="__('latest recorded value')" />
-        <x-stat-tile :label="__('Net worth')" :value="$this->assetsTotal - $this->liabilitiesTotal" :delta-label="__('assets minus liabilities')" />
+        <x-stat-tile :label="__('Assets')" :value="$this->assetsTotal" :caption="__('latest recorded value')" />
+        <x-stat-tile :label="__('Liabilities')" :value="$this->liabilitiesTotal" :caption="__('latest recorded value')" />
+        <x-stat-tile :label="__('Net worth')" :value="$this->assetsTotal - $this->liabilitiesTotal" :caption="__('assets minus liabilities')" />
     </div>
 
     <div class="mt-8 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">

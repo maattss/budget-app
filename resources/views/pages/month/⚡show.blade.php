@@ -91,9 +91,14 @@ new #[Title('Month')] class extends Component {
      */
     public function saveCashFlow(): void
     {
+        // Normalise first so a grouped number validates instead of being rejected as
+        // non-numeric. Assigning back means the field also redisplays cleanly on error.
+        $this->income = Money::parse($this->income);
+        $this->spending = Money::parse($this->spending);
+
         $this->validate([
             'income' => ['required', 'numeric', 'min:0'],
-            'spending' => ['required', 'numeric', 'min:0']
+            'spending' => ['required', 'numeric', 'min:0'],
         ]);
 
         Auth::user()->monthlyFinances()->updateOrCreate(
@@ -113,7 +118,9 @@ new #[Title('Month')] class extends Component {
     #[Computed]
     public function savings(): float
     {
-        return (float) $this->income - (float) $this->spending;
+        // Money::parse, not a bare cast: (float) '62 000' is 62.0, so a grouped value
+        // would quietly render the wrong figure here rather than erroring.
+        return (float) Money::parse($this->income) - (float) Money::parse($this->spending);
     }
 
     /**
@@ -147,6 +154,8 @@ new #[Title('Month')] class extends Component {
      */
     public function saveAssetValues(): void
     {
+        $this->values = array_map(fn ($value): string => Money::parse($value), $this->values);
+
         $this->validate([
             'values.*' => ['nullable', 'numeric', 'min:0'],
         ]);
@@ -177,7 +186,7 @@ new #[Title('Month')] class extends Component {
     {
         $netWorth = 0;
         foreach ($this->assets as $asset) {
-            $assetValue = $this->values[$asset->id] ?? '';
+            $assetValue = Money::parse($this->values[$asset->id] ?? '');
             if ($asset->type->isLiability()) {
                 $netWorth = $netWorth - (float) $assetValue;
             } else {
@@ -201,17 +210,9 @@ new #[Title('Month')] class extends Component {
     </div>
 
     <form wire:submit="saveCashFlow" class="mt-8 max-w-md space-y-6">
-        <flux:input wire:model="income" :label="__('Income')" inputmode="decimal" class="tabular-nums">
-            <x-slot name="iconTrailing">
-                <span class="pe-3 text-sm text-zinc-400 dark:text-zinc-500">kr</span>
-            </x-slot>
-        </flux:input>
+        <x-money-input wire:model="income" :label="__('Income')" />
 
-        <flux:input wire:model="spending" :label="__('Spending')" inputmode="decimal" class="tabular-nums">
-            <x-slot name="iconTrailing">
-                <span class="pe-3 text-sm text-zinc-400 dark:text-zinc-500">kr</span>
-            </x-slot>
-        </flux:input>
+        <x-money-input wire:model="spending" :label="__('Spending')" />
 
         <div class="flex items-center justify-between">
             <flux:text>
@@ -254,16 +255,7 @@ new #[Title('Month')] class extends Component {
                             </flux:table.cell>
                             <flux:table.cell>{{ $asset->type->label() }}</flux:table.cell>
                             <flux:table.cell>
-                                <flux:input
-                                    wire:model="values.{{ $asset->id }}"
-                                    inputmode="decimal"
-                                    size="sm"
-                                    class="tabular-nums"
-                                >
-                                    <x-slot name="iconTrailing">
-                                        <span class="pe-3 text-sm text-zinc-400 dark:text-zinc-500">kr</span>
-                                    </x-slot>
-                                </flux:input>
+                                <x-money-input wire:model="values.{{ $asset->id }}" size="sm" />
                             </flux:table.cell>
                         </flux:table.row>
                     @endforeach

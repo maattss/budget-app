@@ -54,3 +54,48 @@ test('the input form strips decimal-cast noise without adding separators', funct
         ->and(Money::input(null))->toBe('')
         ->and(Money::input(''))->toBe('');
 });
+
+test('parse strips the group separators a human would type', function () {
+    // (float) '62 000' is 62.0 - a grouped number does not fail loudly, it silently
+    // becomes a different number. This is the guard against that.
+    expect(Money::parse('62 000'))->toBe('62000')
+        ->and(Money::parse("62\u{00A0}000"))->toBe('62000')   // non-breaking, what kr() emits
+        ->and(Money::parse("1\u{202F}234\u{202F}567"))->toBe('1234567'); // narrow no-break
+});
+
+test('parse treats a comma as the decimal separator', function () {
+    expect(Money::parse('1234,50'))->toBe('1234.50')
+        ->and(Money::parse('62 000,25'))->toBe('62000.25');
+});
+
+test('parse reads dots as grouping when a comma comes after them', function () {
+    // "1.234,56" is the usual Norwegian paste.
+    expect(Money::parse('1.234,56'))->toBe('1234.56');
+});
+
+test('parse leaves a plain dot decimal alone', function () {
+    expect(Money::parse('1234.56'))->toBe('1234.56');
+});
+
+test('parse passes malformed input through for validation to reject', function () {
+    // It must not invent a number out of nonsense - "not a number" has to stay
+    // something `numeric` refuses.
+    expect(Money::parse('12.34.56'))->toBe('12.34.56')
+        ->and(is_numeric(Money::parse('12.34.56')))->toBeFalse()
+        ->and(Money::parse('abc'))->toBe('abc');
+});
+
+test('parse returns an empty string for nothing', function () {
+    expect(Money::parse(''))->toBe('')
+        ->and(Money::parse(null))->toBe('')
+        ->and(Money::parse('   '))->toBe('');
+});
+
+test('parse round-trips this app own formatting', function () {
+    // kr() out, parse() back in - the pair has to be lossless, since the formatted
+    // value is what a user sees and may retype or paste.
+    foreach ([0, 999, 45000, 1234567] as $amount) {
+        $formatted = str_replace("\u{00A0}kr", '', Money::kr($amount));
+        expect((float) Money::parse($formatted))->toBe((float) $amount);
+    }
+});

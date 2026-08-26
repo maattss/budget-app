@@ -54,7 +54,11 @@
                     </span>
                     <flux:text size="sm" class="shrink-0 tabular-nums">
                         {{ Money::kr($segment['value']) }}
-                        <span class="text-zinc-400 dark:text-zinc-500">{{ round($shares[$index] * 100) }}%</span>
+                        {{-- A real holding must never read as 0%: 10 000 kr of 11.5M rounds to
+                             zero, which says the money is not there. --}}
+                        <span class="text-zinc-400 dark:text-zinc-500">
+                            {{ $shares[$index] > 0 && round($shares[$index] * 100) < 1 ? '<1' : round($shares[$index] * 100) }}%
+                        </span>
                     </flux:text>
                 </div>
             @endforeach

@@ -28,6 +28,36 @@ class Money
     }
 
     /**
+     * Normalise a human-typed amount into a string PHP and `numeric` validation accept.
+     *
+     * Necessary because (float) '62 000' is 62.0, not 62000 - a grouped number that
+     * reaches the server does not fail loudly, it quietly becomes a different number.
+     *
+     * Handles every space used for grouping, including the non-breaking and narrow
+     * no-break spaces this app's own formatter emits, and a comma as the decimal
+     * separator. When both a comma and dots appear and the comma comes last
+     * ("1.234,56"), the dots are treated as group separators - the usual Norwegian
+     * paste. Anything still malformed is left alone so validation rejects it rather
+     * than this method inventing a number.
+     */
+    public static function parse(float|int|string|null $value): string
+    {
+        $value = trim((string) ($value ?? ''));
+
+        if ($value === '') {
+            return '';
+        }
+
+        $value = (string) preg_replace('/[\s\x{00A0}\x{202F}\x{2009}]/u', '', $value);
+
+        if (str_contains($value, ',') && str_contains($value, '.') && strrpos($value, ',') > strrpos($value, '.')) {
+            $value = str_replace('.', '', $value);
+        }
+
+        return str_replace(',', '.', $value);
+    }
+
+    /**
      * The plain form for a number <input>: no separators, no trailing decimal zeros.
      *
      * Eloquent's decimal:2 cast hands back "62000.00", which is noise in a form field.
