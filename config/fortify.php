@@ -161,7 +161,11 @@ return [
     */
 
     'features' => [
-        Features::registration(),
+        // Off unless explicitly enabled. This is a single-user app, so a public
+        // deployment with registration on would let anyone create an account. Defaulting
+        // to false means a fresh production environment is closed without anyone having
+        // to remember a variable; local and testing switch it back on.
+        ...(env('FORTIFY_REGISTRATION', false) ? [Features::registration()] : []),
         Features::resetPasswords(),
         Features::emailVerification(),
         Features::twoFactorAuthentication([
