@@ -26,7 +26,7 @@ class CreateUser extends Command
                             {--name= : The user\'s display name}
                             {--email= : The email address they will log in with}
                             {--password= : Their password; read from INITIAL_USER_PASSWORD if omitted}
-                            {--unverified : Leave the email unverified (they will hit the verification wall)}';
+                            {--unverified : Leave email_verified_at null; harmless today, but a lockout if MustVerifyEmail is ever enabled}';
 
     protected $description = 'Create a user account, since public registration is disabled';
 
