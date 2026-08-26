@@ -28,6 +28,22 @@ class Money
     }
 
     /**
+     * The plain form for a number <input>: no separators, no trailing decimal zeros.
+     *
+     * Eloquent's decimal:2 cast hands back "62000.00", which is noise in a form field.
+     * Deliberately *not* thousand-separated - the value has to survive a round trip
+     * through `numeric` validation, and "62 000" does not.
+     */
+    public static function input(float|int|string|null $amount): string
+    {
+        if ($amount === null || $amount === '') {
+            return '';
+        }
+
+        return (string) (float) $amount;
+    }
+
+    /**
      * A compact form for chart axes and tight stat tiles: 45 000 -> "45k", 1 200 000 -> "1,2M".
      *
      * Signed, so a negative net worth still reads correctly.

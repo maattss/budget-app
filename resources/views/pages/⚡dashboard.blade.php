@@ -119,15 +119,60 @@ new #[Title('Dashboard')] class extends Component {
     /**
      * Net worth per month across the window, for the area chart.
      *
-     * @return array<int, array{label: string, value: float}>
+     * A month with no recorded value for any asset yields null, not zero. Charting it as
+     * zero would claim the user had nothing, when the data only says nothing was
+     * measured - and on a net worth chart that reads as having been wiped out.
+     *
+     * @return array<int, array{label: string, value: float|null}>
      */
     #[Computed]
     public function netWorthSeries(): array
     {
         return array_map(fn (array $month): array => [
             'label' => $month['label'],
-            'value' => $this->netWorthFor($month['year'], $month['month']),
+            'value' => $this->hasValuesIn($month['year'], $month['month'])
+                ? $this->netWorthFor($month['year'], $month['month'])
+                : null,
         ], $this->window);
+    }
+
+    /**
+     * The change in net worth between the two most recently recorded months.
+     *
+     * Recorded, not merely the previous slot in the window - otherwise a gap in the
+     * history reports the entire net worth as this month's gain.
+     */
+    #[Computed]
+    public function netWorthChange(): ?float
+    {
+        $recorded = array_values(array_filter(
+            $this->netWorthSeries,
+            fn (array $point): bool => $point['value'] !== null
+        ));
+
+        if (count($recorded) < 2) {
+            return null;
+        }
+
+        return $recorded[count($recorded) - 1]['value'] - $recorded[count($recorded) - 2]['value'];
+    }
+
+    /**
+     * Whether any asset has a recorded value in the given month.
+     */
+    protected function hasValuesIn(int $year, int $month): bool
+    {
+        foreach ($this->assets as $asset) {
+            $hit = $asset->values->first(
+                fn (AssetValue $value): bool => $value->year === $year && $value->month === $month
+            );
+
+            if ($hit !== null) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -273,7 +318,7 @@ new #[Title('Dashboard')] class extends Component {
         <x-stat-tile
             :label="__('Net worth')"
             :value="$this->netWorth"
-            :delta="count($this->netWorthSeries) > 1 ? $this->netWorth - $this->netWorthSeries[count($this->netWorthSeries) - 2]['value'] : null"
+            :delta="$this->netWorthChange"
             :delta-label="__('vs last month')"
             hero
         />

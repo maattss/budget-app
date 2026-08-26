@@ -44,3 +44,13 @@ test('the compact form signs negatives so a negative axis reads correctly', func
 test('the bare number form omits the suffix for columns', function () {
     expect(Money::number(45000))->toBe("45\u{00A0}000");
 });
+
+test('the input form strips decimal-cast noise without adding separators', function () {
+    // A separator would not survive `numeric` validation on save, so the input form
+    // only removes the trailing zeros the decimal:2 cast adds.
+    expect(Money::input('62000.00'))->toBe('62000')
+        ->and(Money::input('1234.50'))->toBe('1234.5')
+        ->and(Money::input(1000))->toBe('1000')
+        ->and(Money::input(null))->toBe('')
+        ->and(Money::input(''))->toBe('');
+});

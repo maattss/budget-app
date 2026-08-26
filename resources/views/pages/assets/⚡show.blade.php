@@ -126,7 +126,7 @@ new class extends Component {
             <div class="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-100">{{ $this->values->count() }}</div>
             @if ($this->latest)
                 <flux:text size="sm" class="mt-1.5 block text-zinc-400 dark:text-zinc-500">
-                    {{ __('Last :month', ['month' => Carbon::create($this->latest->year, $this->latest->month)->translatedFormat('F Y')]) }}
+                    {{ __('Latest :month', ['month' => Carbon::create($this->latest->year, $this->latest->month)->translatedFormat('F Y')]) }}
                 </flux:text>
             @endif
         </div>
@@ -148,6 +148,7 @@ new class extends Component {
         <x-chart.area
             class="mt-4"
             :points="$this->series"
+            :var="'--viz-'.$this->asset->type->seriesSlot()"
             :label="__(':name value history', ['name' => $this->asset->name])"
         />
     </div>

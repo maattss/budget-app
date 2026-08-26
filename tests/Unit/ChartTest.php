@@ -99,14 +99,57 @@ test('shares always sum to one when there is any positive value', function () {
     expect(array_sum(Chart::shares([7.0, 11.0, 3.0, 0.0])))->toBe(1.0);
 });
 
-test('line and area paths are empty for an empty series', function () {
-    expect(Chart::linePath([], 0, 1, 0, 0, 100, 100))->toBe('')
-        ->and(Chart::areaPath([], 0, 1, 0, 0, 100, 100))->toBe('');
+test('line and area paths are empty for an empty run', function () {
+    expect(Chart::linePath([], 0, 0, 1, 0, 0, 100, 100))->toBe('')
+        ->and(Chart::areaPath([], 0, 0, 1, 0, 0, 100, 100))->toBe('');
 });
 
 test('an area path closes back to the baseline', function () {
-    $path = Chart::areaPath([10.0, 20.0], 0.0, 20.0, 0.0, 0.0, 100.0, 100.0);
+    $path = Chart::areaPath([0 => 10.0, 1 => 20.0], 2, 0.0, 20.0, 0.0, 0.0, 100.0, 100.0);
 
     expect($path)->toEndWith('Z')
         ->and($path)->toStartWith('M0 ');
+});
+
+test('a single-point run gets a line but no area', function () {
+    // A zero-width area renders as an invisible sliver, so it is skipped and the
+    // component draws a dot instead.
+    expect(Chart::areaPath([3 => 50.0], 12, 0.0, 100.0, 0.0, 0.0, 120.0, 100.0))->toBe('')
+        ->and(Chart::linePath([3 => 50.0], 12, 0.0, 100.0, 0.0, 0.0, 120.0, 100.0))->not->toBeEmpty();
+});
+
+test('a run keeps its position in the full series', function () {
+    // Keys are indices into the whole window, so a run starting in month 6 of 12
+    // must land halfway across the plot, not at its left edge.
+    $path = Chart::linePath([6 => 0.0], 13, 0.0, 1.0, 0.0, 0.0, 120.0, 100.0);
+
+    expect($path)->toStartWith('M60 ');
+});
+
+test('runs split a series on its gaps', function () {
+    // A null is "not recorded" and must break the line rather than plot as zero.
+    $runs = Chart::runs([1.0, 2.0, null, null, 5.0]);
+
+    expect($runs)->toHaveCount(2)
+        ->and($runs[0])->toBe([0 => 1.0, 1 => 2.0])
+        ->and($runs[1])->toBe([4 => 5.0]);
+});
+
+test('a series with no gaps is a single run', function () {
+    expect(Chart::runs([1.0, 2.0, 3.0]))->toHaveCount(1);
+});
+
+test('an all-null series has no runs at all', function () {
+    expect(Chart::runs([null, null]))->toBe([]);
+});
+
+test('a zero is a real value and never treated as a gap', function () {
+    // The whole point of the null: zero means "measured, and it was nothing".
+    expect(Chart::runs([0.0, null, 0.0]))->toHaveCount(2);
+});
+
+test('the domain ignores nulls rather than counting them as zero', function () {
+    // If a null were read as 0.0 the domain would stretch down to include it and
+    // squash a series that never actually approached zero.
+    expect(Chart::domain([null, 900.0, null]))->toBe(Chart::domain([900.0]));
 });

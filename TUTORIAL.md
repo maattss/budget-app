@@ -1,7 +1,7 @@
 # Budget app — a ~4 hour Laravel/Livewire learning build
 
 > **Status (2026-08-26): all four hours complete, plus a visual pass beyond the plan.**
-> `composer test` (Pint → Larastan 7 → Pest) passes clean: 72 tests, 9 132 assertions.
+> `composer test` (Pint → Larastan 7 → Pest) passes clean: 80 tests, 9 147 assertions.
 >
 > **Post-plan visual pass.** Starter-kit chrome removed (Laravel logo replaced with an
 > own mark, `placeholder-pattern` deleted, `'Laravel'` name fallbacks and the "Platform"
@@ -98,6 +98,27 @@
 > - Component tests cover the **component**, not the **template binding**. A typo in
 >   `wire:model="incom"` still passes every test, because `->set('income', ...)` bypasses
 >   the binding entirely.
+> - **Screenshots are reachable without any browser MCP server.** Chrome itself can do
+>   it: `--headless --screenshot=out.png --window-size=W,H --user-data-dir=<dir>` plus a
+>   throwaway local-only route that calls `Auth::loginUsingId()` and redirects to the page
+>   you want, so one navigation both authenticates and lands. Gotchas that cost a while:
+>   `timeout` does not exist on macOS (every run silently did nothing), headless Chrome
+>   writes the PNG and then **does not exit**, so run it backgrounded and poll for the
+>   file, and two instances cannot share one `--user-data-dir`.
+> - **Four real bugs were only visible in a screenshot**, none of which any test caught:
+>   the net-worth area chart drew nine months of flat zero because unrecorded months
+>   returned `0` instead of `null` (in a finance app that reads as having been wiped out);
+>   the allocation legend clipped its labels to `Prope…`; the type `<select>` displayed
+>   "— Liabilities —" instead of its placeholder, because `flux:select` renders a native
+>   `<select>` and injects the placeholder as `<option value="" disabled selected>` - a
+>   later empty-valued option wins the selection, so real `<optgroup>` is the fix; and the
+>   asset detail page charted one asset in two different colours side by side. **Rendering
+>   and looking is a distinct verification step from running the suite** - the suite was
+>   green through all four.
+> - The `null`-vs-zero distinction earned a first-class place in `Chart::runs()`, which
+>   splits a series on its gaps so the line breaks instead of diving to the axis. A zero
+>   is a real measurement ("I had nothing"); a null is the absence of one ("I did not
+>   measure"). Conflating them is a correctness bug, not a styling one.
 > - **The `??=` memoisation bug got much worse before it got better.** The rebuilt
 >   dashboard reads `currentMonth`/`previousMonth` many more times (three stat tiles,
 >   their deltas, a `@unless`), and because neither can memoise a `null` return the page

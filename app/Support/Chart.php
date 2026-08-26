@@ -39,12 +39,15 @@ class Chart
      * must always *contain* zero, otherwise the baseline sits off-canvas and the area
      * fill reads as though it were measured from an arbitrary floor.
      *
-     * @param  array<int, float>  $values
+     * @param  array<int, float|null>  $values  nulls are ignored, not treated as zero
      * @return array{0: float, 1: float}
      */
     public static function domain(array $values): array
     {
-        $values = array_map(fn ($value): float => (float) $value, $values);
+        $values = array_map(
+            fn ($value): float => (float) $value,
+            array_filter($values, fn ($value): bool => $value !== null)
+        );
 
         $min = min([0.0, ...$values]);
         $max = max([0.0, ...$values]);
@@ -115,47 +118,92 @@ class Chart
     }
 
     /**
-     * An SVG polyline path through a series.
+     * Split a series into runs of consecutive present values.
      *
-     * @param  array<int, float>  $values
+     * A null means "not recorded", which is not the same as zero - in a finance app the
+     * difference is between "you had nothing" and "you did not measure". Charting a null
+     * as zero states the first when the data only supports the second, so the line is
+     * broken into segments instead and the gap stays visible.
+     *
+     * Each run keeps its original indices so the x positions still line up with the
+     * full series.
+     *
+     * @param  array<int, float|null>  $values
+     * @return array<int, array<int, float>> runs keyed by original index
      */
-    public static function linePath(array $values, float $domainMin, float $domainMax, float $left, float $top, float $width, float $height): string
+    public static function runs(array $values): array
     {
-        $count = count($values);
+        $runs = [];
+        $current = [];
 
-        if ($count === 0) {
+        foreach (array_values($values) as $index => $value) {
+            if ($value === null) {
+                if ($current !== []) {
+                    $runs[] = $current;
+                    $current = [];
+                }
+
+                continue;
+            }
+
+            $current[$index] = (float) $value;
+        }
+
+        if ($current !== []) {
+            $runs[] = $current;
+        }
+
+        return $runs;
+    }
+
+    /**
+     * An SVG polyline path through one run of a series.
+     *
+     * Keys are indices into the *full* series, so a run that starts halfway through
+     * still lands at the right x positions.
+     *
+     * @param  array<int, float>  $run  value keyed by index in the full series
+     */
+    public static function linePath(array $run, int $count, float $domainMin, float $domainMax, float $left, float $top, float $width, float $height): string
+    {
+        if ($run === []) {
             return '';
         }
 
         $commands = [];
+        $first = true;
 
-        foreach (array_values($values) as $index => $value) {
+        foreach ($run as $index => $value) {
             $x = self::pointX($index, $count, $left, $width);
             $y = self::scale((float) $value, $domainMin, $domainMax, $top + $height, $top);
 
-            $commands[] = ($index === 0 ? 'M' : 'L').self::round($x).' '.self::round($y);
+            $commands[] = ($first ? 'M' : 'L').self::round($x).' '.self::round($y);
+            $first = false;
         }
 
         return implode(' ', $commands);
     }
 
     /**
-     * The same series closed down to a baseline, for the area wash under the line.
+     * The same run closed down to a baseline, for the area wash underneath.
      *
-     * @param  array<int, float>  $values
+     * A single-point run gets no area - there is no width to fill, and a zero-width
+     * path renders as an invisible sliver rather than nothing.
+     *
+     * @param  array<int, float>  $run
      */
-    public static function areaPath(array $values, float $domainMin, float $domainMax, float $left, float $top, float $width, float $height, float $baselineValue = 0.0): string
+    public static function areaPath(array $run, int $count, float $domainMin, float $domainMax, float $left, float $top, float $width, float $height, float $baselineValue = 0.0): string
     {
-        $line = self::linePath($values, $domainMin, $domainMax, $left, $top, $width, $height);
-
-        if ($line === '') {
+        if (count($run) < 2) {
             return '';
         }
 
-        $count = count($values);
+        $line = self::linePath($run, $count, $domainMin, $domainMax, $left, $top, $width, $height);
+
+        $indices = array_keys($run);
         $baselineY = self::scale($baselineValue, $domainMin, $domainMax, $top + $height, $top);
-        $lastX = self::pointX($count - 1, $count, $left, $width);
-        $firstX = self::pointX(0, $count, $left, $width);
+        $lastX = self::pointX((int) end($indices), $count, $left, $width);
+        $firstX = self::pointX((int) reset($indices), $count, $left, $width);
 
         return $line
             .' L'.self::round($lastX).' '.self::round($baselineY)

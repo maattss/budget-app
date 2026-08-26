@@ -30,7 +30,7 @@
 @else
     <svg viewBox="0 0 {{ $w }} {{ $h }}" class="h-7 w-24" aria-hidden="true" focusable="false">
         <path
-            d="{{ Chart::linePath($values, $min, $max, $pad, $pad, $w - $pad * 2, $h - $pad * 2) }}"
+            d="{{ Chart::linePath(array_combine(range(0, $count - 1), $values), $count, $min, $max, $pad, $pad, $w - $pad * 2, $h - $pad * 2) }}"
             fill="none" stroke="var({{ $var }})" stroke-width="2"
             stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"
             opacity="0.55"

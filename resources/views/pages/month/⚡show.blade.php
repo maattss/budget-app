@@ -82,8 +82,8 @@ new #[Title('Month')] class extends Component {
             ->where('month', $this->month)
             ->first();
 
-        $this->income = $finance?->income ?? '';
-        $this->spending = $finance?->spending ?? '';
+        $this->income = Money::input($finance?->income);
+        $this->spending = Money::input($finance?->spending);
     }
 
     /**
@@ -138,7 +138,7 @@ new #[Title('Month')] class extends Component {
             ->pluck('value', 'asset_id');
 
         $this->values = $this->assets
-            ->mapWithKeys(fn (Asset $asset) => [$asset->id => $stored->get($asset->id, '')])
+            ->mapWithKeys(fn (Asset $asset) => [$asset->id => Money::input($stored->get($asset->id))])
             ->all();
     }
 

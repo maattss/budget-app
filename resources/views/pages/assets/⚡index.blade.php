@@ -153,15 +153,21 @@ class extends Component {
             <flux:input wire:model="name" :label="__('Name')" class="min-w-48 flex-1" />
 
             <flux:select wire:model="type" :label="__('Type')" :placeholder="__('Choose a type')" class="w-56">
-                <flux:select.option value="" disabled>{{ __('— Assets —') }}</flux:select.option>
-                @foreach (AssetType::assets() as $assetType)
-                    <flux:select.option value="{{ $assetType->value }}">{{ $assetType->label() }}</flux:select.option>
-                @endforeach
+                {{-- Real <optgroup>, not disabled value="" options. flux:select renders a
+                     native <select> and injects the placeholder as
+                     <option value="" disabled selected>; a second empty-valued option
+                     later in the markup wins the selection and the placeholder is lost. --}}
+                <optgroup label="{{ __('Assets') }}">
+                    @foreach (AssetType::assets() as $assetType)
+                        <flux:select.option value="{{ $assetType->value }}">{{ $assetType->label() }}</flux:select.option>
+                    @endforeach
+                </optgroup>
 
-                <flux:select.option value="" disabled>{{ __('— Liabilities —') }}</flux:select.option>
-                @foreach (AssetType::liabilities() as $assetType)
-                    <flux:select.option value="{{ $assetType->value }}">{{ $assetType->label() }}</flux:select.option>
-                @endforeach
+                <optgroup label="{{ __('Liabilities') }}">
+                    @foreach (AssetType::liabilities() as $assetType)
+                        <flux:select.option value="{{ $assetType->value }}">{{ $assetType->label() }}</flux:select.option>
+                    @endforeach
+                </optgroup>
             </flux:select>
 
             <flux:button variant="primary" type="submit" class="mt-6">{{ __('Add') }}</flux:button>
@@ -213,7 +219,7 @@ class extends Component {
                                     variant="subtle"
                                     size="sm"
                                     icon="trash"
-                                    class="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                                    class="opacity-40 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                     wire:click="delete({{ $asset->id }})"
                                     wire:confirm="{{ __('Delete :name and all its values?', ['name' => $asset->name]) }}"
                                 />

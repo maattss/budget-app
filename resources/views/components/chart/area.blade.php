@@ -1,6 +1,8 @@
 @props([
     'points' => [],
     'label' => null,
+    // Colour follows the entity being charted, not the chart's position on the page.
+    'var' => '--viz-1',
 ])
 
 @php
@@ -9,7 +11,9 @@
 
     // $points: list of ['label' => 'Aug', 'value' => 1234.0]
     $points = array_values($points);
-    $values = array_map(fn (array $point): float => (float) $point['value'], $points);
+    // A null value means 'not recorded'. It must not become a zero.
+    $values = array_map(fn (array $point) => $point['value'] === null ? null : (float) $point['value'], $points);
+    $runs = Chart::runs($values);
 
     [$domainMin, $domainMax] = Chart::domain($values);
 
@@ -29,7 +33,9 @@
     $baselineY = Chart::scale(0.0, $domainMin, $domainMax, $padTop + $plotH, $padTop);
 
     $count = count($points);
-    $lastIndex = $count - 1;
+
+    $recordedIndices = array_keys(array_filter($values, fn ($v): bool => $v !== null));
+    $lastRecordedIndex = $recordedIndices === [] ? -1 : max($recordedIndices);
 @endphp
 
 <div {{ $attributes->merge(['class' => 'w-full']) }}>
@@ -68,21 +74,33 @@
                 />
             @endif
 
-            {{-- Area wash at ~10% then the 2px line on top. --}}
-            <path
-                d="{{ Chart::areaPath($values, $domainMin, $domainMax, $padLeft, $padTop, $plotW, $plotH) }}"
-                fill="var(--viz-1)" fill-opacity="0.10"
-            />
-            <path
-                d="{{ Chart::linePath($values, $domainMin, $domainMax, $padLeft, $padTop, $plotW, $plotH) }}"
-                fill="none" stroke="var(--viz-1)" stroke-width="2"
-                stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"
-            />
+            {{-- One area wash and one line per run of recorded months. Unrecorded months
+                 break the line rather than pulling it to zero. --}}
+            @foreach ($runs as $run)
+                @php $area = Chart::areaPath($run, $count, $domainMin, $domainMax, $padLeft, $padTop, $plotW, $plotH); @endphp
+                @if ($area !== '')
+                    <path d="{{ $area }}" fill="var({{ $var }})" fill-opacity="0.10" />
+                @endif
+                <path
+                    d="{{ Chart::linePath($run, $count, $domainMin, $domainMax, $padLeft, $padTop, $plotW, $plotH) }}"
+                    fill="none" stroke="var({{ $var }})" stroke-width="2"
+                    stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"
+                />
+                {{-- A lone recorded month has no line to draw, so mark it as a point. --}}
+                @if (count($run) === 1)
+                    @php $only = array_key_first($run); @endphp
+                    <circle
+                        cx="{{ Chart::round(Chart::pointX($only, $count, $padLeft, $plotW)) }}"
+                        cy="{{ Chart::round(Chart::scale($run[$only], $domainMin, $domainMax, $padTop + $plotH, $padTop)) }}"
+                        r="4" fill="var({{ $var }})" stroke="var(--viz-surface)" stroke-width="2"
+                    />
+                @endif
+            @endforeach
 
             {{-- x labels, thinned so they never collide on narrow screens. --}}
             @php $every = (int) max(1, ceil($count / 7)); @endphp
             @foreach ($points as $index => $point)
-                @if ($index % $every === 0 || $index === $lastIndex)
+                @if ($index % $every === 0 || $index === $count - 1)
                     <text
                         x="{{ Chart::round(Chart::pointX($index, $count, $padLeft, $plotW)) }}"
                         y="{{ $h - 8 }}"
@@ -95,6 +113,7 @@
                  title so a value is reachable without JavaScript. The table below the
                  chart is the ungated equivalent. --}}
             @foreach ($points as $index => $point)
+                @continue($point['value'] === null)
                 @php
                     $px = Chart::pointX($index, $count, $padLeft, $plotW);
                     $py = Chart::scale((float) $point['value'], $domainMin, $domainMax, $padTop + $plotH, $padTop);
@@ -117,19 +136,25 @@
                     />
                     <circle
                         cx="{{ Chart::round($px) }}" cy="{{ Chart::round($py) }}" r="4"
-                        fill="var(--viz-1)" stroke="var(--viz-surface)" stroke-width="2"
-                        class="{{ $index === $lastIndex ? '' : 'opacity-0 transition-opacity group-hover:opacity-100' }}"
+                        fill="var({{ $var }})" stroke="var(--viz-surface)" stroke-width="2"
+                        class="{{ $index === $lastRecordedIndex ? '' : 'opacity-0 transition-opacity group-hover:opacity-100' }}"
                         pointer-events="none"
                     />
                 </g>
             @endforeach
         </svg>
 
-        {{-- The endpoint is the one value worth direct-labelling; the rest ride the axis. --}}
-        <div class="mt-1 flex justify-end pe-4">
-            <flux:text size="sm" class="tabular-nums">
-                {{ $points[$lastIndex]['label'] }}: <span class="font-medium">{{ Money::kr($points[$lastIndex]['value']) }}</span>
-            </flux:text>
-        </div>
+        {{-- Direct-label the last *recorded* month, not the last month in the window. --}}
+        @php
+            $recorded = array_values(array_filter($points, fn (array $p): bool => $p['value'] !== null));
+            $latest = $recorded === [] ? null : end($recorded);
+        @endphp
+        @if ($latest)
+            <div class="mt-1 flex justify-end pe-4">
+                <flux:text size="sm" class="tabular-nums">
+                    {{ $latest['label'] }}: <span class="font-medium">{{ Money::kr($latest['value']) }}</span>
+                </flux:text>
+            </div>
+        @endif
     @endif
 </div>

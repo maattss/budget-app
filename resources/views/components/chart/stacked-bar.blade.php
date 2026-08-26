@@ -45,12 +45,12 @@
             palette validator requires exactly this relief - a visible label and value,
             never colour alone.
         --}}
-        <div class="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+        <div class="mt-4 space-y-2">
             @foreach ($segments as $index => $segment)
                 <div class="flex items-baseline justify-between gap-3">
                     <span class="flex min-w-0 items-center gap-2">
                         <span class="size-2.5 shrink-0 rounded-full" style="background: var({{ $segment['var'] }});"></span>
-                        <flux:text size="sm" class="truncate">{{ $segment['name'] }}</flux:text>
+                        <flux:text size="sm">{{ $segment['name'] }}</flux:text>
                     </span>
                     <flux:text size="sm" class="shrink-0 tabular-nums">
                         {{ Money::kr($segment['value']) }}
