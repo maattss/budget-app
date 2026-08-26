@@ -30,3 +30,6 @@ Homestead.json
 auth.json
 /.idea/
 /public/fonts-manifest.dev.json
+
+# macOS
+.DS_Store

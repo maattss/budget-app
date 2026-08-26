@@ -1,8 +1,8 @@
 # Budget app — a ~4 hour Laravel/Livewire learning build
 
-> **Status (2026-08-26): Hours 1–3 complete. Hour 4 all but done — the dashboard,
-> the nav and the N+1 demo are finished; two `->todo()` tests in
-> `tests/Feature/MonthTest.php` are the only work left.**
+> **Status (2026-08-26): Hours 1–3 complete. Hour 4 done bar one item — the dashboard,
+> the nav, the N+1 demo and all four Pest tests are finished. Only
+> `Model::preventLazyLoading()` (the tail of 4.3) remains.**
 >
 > **4.1 done** — `resources/views/pages/⚡dashboard.blade.php` is a working Livewire
 > SFC with all four `#[Computed]` methods (`currentMonth`, `netWorth`, `assets`,
@@ -10,10 +10,21 @@
 > the old static `resources/views/dashboard.blade.php` is deleted. Sidebar nav entries
 > exist for dashboard, assets and month.
 >
-> **4.2 scaffolded** — `tests/Feature/MonthTest.php` has the cash-flow test from the
-> plan passing, plus two `->todo()` stubs to fill in: the `#[Url]` hydration check
-> (`Livewire::withQueryParams()`) and the auth-scoping check (forged asset id writes
-> zero rows). Both were proved by hand in an earlier session but never kept as tests.
+> **4.2 done** — `tests/Feature/MonthTest.php` has four live tests, no stubs. Each one
+> was **falsified before being kept**: the component was deliberately broken and the test
+> confirmed red, then restored. What each guards:
+>
+> | test | sabotage it catches |
+> |---|---|
+> | cash flow stores the row for the selected month | writing to the wrong month; a broken `savings` accessor |
+> | year/month come from the query string | `=` instead of `??=` on either property |
+> | year/month fall back when the URL is bare | the defaults removed entirely |
+> | a forged asset id cannot write to another user's asset | iterating client-controlled `$this->values` |
+>
+> The last one reproduces the real Laravel vulnerability class from 4.3 in this codebase:
+> `foreach ($this->values as $assetId => $v) { Asset::find($assetId)->values()->updateOrCreate(...) }`
+> reads perfectly innocently, and `Asset::find()` hands back another user's row without
+> complaint. Keep that snippet around — it is the code-review pattern worth recognising.
 >
 > **4.3 done** — N+1 measured on Mats's own dashboard, not a demo: `netWorth()` touching
 > `$asset->values` per asset costs **6 queries** for 5 assets; the constrained eager load
@@ -63,6 +74,37 @@
 > - Component tests cover the **component**, not the **template binding**. A typo in
 >   `wire:model="incom"` still passes every test, because `->set('income', ...)` bypasses
 >   the binding entirely.
+> - **Falsify every test before keeping it.** Break the code the test exists to guard and
+>   confirm it goes red. Two tests written this session passed while proving nothing, and
+>   only sabotage found it: a `#[Url]` fixture built from `now()->subYear()` (same *month*
+>   as today, so a clobbered `month` slipped through), and an `assertDatabaseHas` with no
+>   `year`/`month` in a test literally named "stores the row for the selected month" —
+>   `saveCashFlow()` was made to write to 1999-01 and it stayed green. A test you have
+>   never seen fail is a test you do not know works.
+> - Corollary: when a fixture value could coincide with the buggy output, **assert the
+>   precondition** — `expect($year)->not->toBe(now()->year)` — so the test cannot quietly
+>   go vacuous when someone edits the fixture later.
+> - **Assertions of absence need a positive control.** `assertDatabaseMissing(...)` passes
+>   for free if the method no-ops. The auth-scoping test writes the *attacker's own* value
+>   in the same call and asserts it landed, so green means "the write path ran and the
+>   forged key was ignored", not "nothing happened".
+> - **`->todo()` makes the test body dead code.** A `$this->set(...)` — wrong receiver,
+>   `set()` lives on the Livewire handle, not the PHPUnit test case — sat in a `->todo()`
+>   test as an outright fatal error with the suite green. Drop `->todo()` when you *start*
+>   writing a body, not when you finish it.
+> - `decimal:2` cuts both ways in tests: `assertDatabaseHas(['income' => 50000])` matches
+>   `50000.00` because SQL compares numerically, but `$finance->income` off the model is
+>   the **string** `"50000.00"` while the `savings` accessor returns a real `float`. Pest's
+>   `toBe()` is strict `===`, so mind which side of the boundary you are asserting on.
+> - `sole()` instead of `first()` when fetching a row back: it throws on zero *or more than
+>   one*, so it quietly asserts `updateOrCreate` upserted rather than duplicated.
+> - In tests, prefer `$asset->values()` (method) over `$asset->values` (property) after an
+>   action — a model captured before the call returns its stale relation cache and would
+>   pass against a successful attack. Asserting against the database sidesteps it entirely.
+> - Still unproven: the `'user_id' => $user->id` line in the cash-flow assertion. Dropping
+>   the user scoping from `updateOrCreate` fails on a `NOT NULL` constraint before that
+>   assertion is reached, so no constructed failure isolates it yet. Kept as habit, not
+>   counted as covered.
 > - The suite runs on in-memory SQLite (`phpunit.xml:26-27`) while the app runs MySQL.
 >   Two divergences that matter here: MySQL's default `utf8mb4` collation is
 >   case-**in**sensitive where SQLite's `=` is case-sensitive (so `where('email', ...)`
