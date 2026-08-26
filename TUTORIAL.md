@@ -1,8 +1,11 @@
 # Budget app — a ~4 hour Laravel/Livewire learning build
 
-> **Status (2026-08-26): Hours 1–3 complete. Hour 4 done bar one item — the dashboard,
-> the nav, the N+1 demo and all four Pest tests are finished. Only
-> `Model::preventLazyLoading()` (the tail of 4.3) remains.**
+> **Status (2026-08-26): all four hours complete.** Dashboard, month screen, assets
+> screen, nav, four falsified Pest tests, and the N+1 guard are all in. `composer test`
+> (Pint → Larastan 7 → Pest) passes clean: 39 tests, 102 assertions.
+>
+> Nothing in the plan is outstanding. Ideas deliberately left undone are at the bottom
+> (the shared `months` table being the main one).
 >
 > **4.1 done** — `resources/views/pages/⚡dashboard.blade.php` is a working Livewire
 > SFC with all four `#[Computed]` methods (`currentMonth`, `netWorth`, `assets`,
@@ -30,7 +33,18 @@
 > `$asset->values` per asset costs **6 queries** for 5 assets; the constrained eager load
 > `with(['values' => fn ($q) => $q->where('year', ...)->where('month', ...)])` collapses
 > it to **2**, the second being a single `where asset_id in (1,2,3,4,5)`. Auth scoping was
-> covered earlier (see below). Only `Model::preventLazyLoading()` is left to look at.
+> covered earlier (see below).
+>
+> **`Model::preventLazyLoading(! app()->isProduction())` is now in
+> `AppServiceProvider::configureDefaults()`**, alongside the existing
+> `DB::prohibitDestructiveCommands(app()->isProduction())`. Note the **opposite
+> polarity** of those two lines: destructive-command guards want production, strictness
+> guards want the negation. Getting it backwards was written twice in a row here, and it
+> is worse than omitting the flag — prod would 500 on any N+1 while dev stayed silent.
+> `app()->isProduction()` already returns bool, so `!== false` is a no-op that hides the
+> mistake. Verified: removing the dashboard's eager load now fails the **suite** with
+> `LazyLoadingViolationException`, where this morning the same N+1 needed a hand-written
+> query-counting test to spot.
 >
 > `resources/views/pages/month/⚡show.blade.php` is finished: `#[Url]`-synced
 > `year`/`month`, month navigation, the cash-flow form (`loadCashFlow`,
@@ -74,6 +88,19 @@
 > - Component tests cover the **component**, not the **template binding**. A typo in
 >   `wire:model="incom"` still passes every test, because `->set('income', ...)` bypasses
 >   the binding entirely.
+> - **`preventLazyLoading` only arms models from multi-row result sets.**
+>   `Builder::hydrate()` (`Builder.php:476`) stamps the instance flag behind
+>   `if (count($items) > 1)`, so `Asset::first()->values` never throws no matter what the
+>   static flag says — a one-row lazy load is one extra query, not an N+1, and Laravel
+>   exempts it by design. Cost the first probe of the flag a wrong conclusion. Also note
+>   `handleLazyLoadingViolation()` exempts `! $this->exists || $this->wasRecentlyCreated`,
+>   so freshly-factoried models never trip it and a green suite is not proof of being
+>   lazy-load-free. `Model::shouldBeStrict()` is the bigger hammer (adds
+>   `preventSilentlyDiscardingAttributes` + `preventAccessingMissingAttributes`), and
+>   `handleLazyLoadingViolationUsing()` swaps the throw for a log — the way to roll this
+>   out on an existing codebase. Contrast EF Core, where lazy loading is opt-in and this
+>   whole class of bug needs proxies to exist at all; Laravel picked the convenient default
+>   and bolts strictness on top.
 > - **Falsify every test before keeping it.** Break the code the test exists to guard and
 >   confirm it goes red. Two tests written this session passed while proving nothing, and
 >   only sabotage found it: a `#[Url]` fixture built from `now()->subYear()` (same *month*
@@ -364,6 +391,7 @@ Time permitting, demonstrated live rather than described:
 - `app/Models/MonthlyFinance.php` — derived `savings` accessor
 - `app/Models/User.php` — `assets()` relation
 - `routes/web.php` — two new routes, dashboard becomes `Route::livewire`
+- `app/Providers/AppServiceProvider.php` — `Model::preventLazyLoading()` in `configureDefaults()`
 - `resources/views/layouts/app/sidebar.blade.php` — nav entries
 - `resources/views/dashboard.blade.php` — replaced by the SFC
 
