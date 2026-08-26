@@ -134,6 +134,49 @@ and make sure `APP_URL` is the real HTTPS origin.
 
 ---
 
+## Environment variables the host does not give you
+
+Laravel Cloud injects `DB_HOST`, `DB_USERNAME`, `DB_PASSWORD` and `DB_DATABASE` when you
+attach a database — but **not `DB_CONNECTION`**. Set it yourself:
+
+```
+DB_CONNECTION=mysql
+```
+
+This caused a real failure on the first deploy. `config/database.php` used to fall back to
+Laravel's stock `sqlite`, so the app ignored the perfectly good MySQL credentials it had
+been handed and went looking for `/var/www/html/database/database.sqlite`, surfacing as:
+
+```
+Database file at path [/var/www/html/database/database.sqlite] does not exist.
+(Connection: sqlite, ... SQL: select * from "cache" ...)
+```
+
+Note the query is a *cache* read, not application data — `CACHE_STORE=database`, so the
+first thing to touch the database is the framework itself, and the error names a
+subsystem you were not thinking about. The default is now `mysql`, so a missing
+`DB_CONNECTION` fails on the connection it was actually given instead of silently
+switching engines.
+
+If the managed instance enforces SSL you also need:
+
+```
+MYSQL_ATTR_SSL_CA="/etc/ssl/certs/ca-certificates.crt"
+```
+
+## Nightwatch
+
+`laravel/nightwatch` is installed. It ships **enabled by default**
+(`env('NIGHTWATCH_ENABLED', true)`) and wants a `NIGHTWATCH_TOKEN`, so it is switched off
+in `.env.example` and `phpunit.xml` — local development and the test suite should not be
+emitting telemetry at an agent that is not running.
+
+In production, Laravel Cloud's native Nightwatch integration provides the token; enable it
+from the environment's dashboard rather than setting `NIGHTWATCH_TOKEN` by hand. Sampling
+and redaction knobs are documented in `.junie/skills/configure-nightwatch/reference.md` —
+`redact_payload_fields` already covers `_token,password,password_confirmation`, which is
+worth checking before pointing it at a finance app.
+
 ## What this app does *not* need
 
 Checked, and it keeps the deployment simple:

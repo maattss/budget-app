@@ -17,7 +17,12 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    // Defaults to mysql, not Laravel's stock sqlite. Every environment this app runs in
+    // uses MySQL (see DEPLOY.md), and the test suite sets DB_CONNECTION=sqlite explicitly
+    // in phpunit.xml. Falling back to sqlite meant a host that injects DB_HOST/USERNAME/
+    // PASSWORD/DATABASE but not DB_CONNECTION - which is what Laravel Cloud does - would
+    // quietly look for a database file instead of failing on the connection it was given.
+    'default' => env('DB_CONNECTION', 'mysql'),
 
     /*
     |--------------------------------------------------------------------------
