@@ -1,8 +1,18 @@
 # Budget app — a ~4 hour Laravel/Livewire learning build
 
-> **Status (2026-08-26): all four hours complete.** Dashboard, month screen, assets
-> screen, nav, four falsified Pest tests, and the N+1 guard are all in. `composer test`
-> (Pint → Larastan 7 → Pest) passes clean: 39 tests, 102 assertions.
+> **Status (2026-08-26): all four hours complete, plus a visual pass beyond the plan.**
+> `composer test` (Pint → Larastan 7 → Pest) passes clean: 72 tests, 9 132 assertions.
+>
+> **Post-plan visual pass.** Starter-kit chrome removed (Laravel logo replaced with an
+> own mark, `placeholder-pattern` deleted, `'Laravel'` name fallbacks and the "Platform"
+> nav heading gone). The hardcoded `class="dark"` was removed from all four layouts so
+> `settings/appearance` actually works, which means every colour is now defined as a
+> light/dark pair. All money renders through `App\Support\Money` as `45 000 kr` —
+> non-breaking spaces, Norwegian decimal comma. Asset types gained `icon()`,
+> `badgeClasses()` and `seriesSlot()`. New page: `assets/{asset}` with per-asset value
+> history. Charts are hand-rolled inline SVG (no npm dependency, nothing to re-init on a
+> Livewire morph): net-worth area, income/spending grouped columns, an allocation
+> stacked bar, and row sparklines.
 >
 > Nothing in the plan is outstanding. Ideas deliberately left undone are at the bottom
 > (the shared `months` table being the main one).
@@ -88,6 +98,36 @@
 > - Component tests cover the **component**, not the **template binding**. A typo in
 >   `wire:model="incom"` still passes every test, because `->set('income', ...)` bypasses
 >   the binding entirely.
+> - **The `??=` memoisation bug got much worse before it got better.** The rebuilt
+>   dashboard reads `currentMonth`/`previousMonth` many more times (three stat tiles,
+>   their deltas, a `@unless`), and because neither can memoise a `null` return the page
+>   went to **17 queries** — thirteen of them the same single-row lookup. Fix was not a
+>   sentinel object but a shape change: one `finances()` computed loading every
+>   `monthly_finances` row keyed by `year * 100 + month`, with `currentMonth`,
+>   `previousMonth`, `cashFlowSeries` and `recentMonths` all reading from it. **17 → 3
+>   queries**, and now flat regardless of asset or month count. A collection miss is a
+>   null array entry, not another round trip — which sidesteps the `??=` limitation
+>   entirely rather than working around it.
+> - **Chart maths belongs in `app/`, not in a Blade component.** `App\Support\Chart`
+>   holds every bit of geometry precisely because `phpstan.neon` does not scan
+>   `resources/` — arithmetic written in a template is neither type-checked nor
+>   reachable from a test. Same blind spot as the SFC note above, applied deliberately.
+> - **The dataviz guidance overruled two of my own choices**, worth remembering as
+>   general rules: a donut is wrong for part-to-whole beyond a glance (a horizontal
+>   stacked bar replaced it, since asset types have long names), and a single-series
+>   chart gets **no** legend — one swatch just restates the title.
+> - A horizontal stacked bar should be **flexbox, not SVG**. The SVG version needed
+>   `preserveAspectRatio="none"` to fill its width, which squashed the 4px corner radius
+>   into an ellipse. Plain divs with a flex gap get correct rounding and real gaps free.
+> - `vector-effect="non-scaling-stroke"` is what lets a `viewBox`-scaled SVG keep a true
+>   2px line at any container width. Without it, stroke weight scales with the chart.
+> - Tailwind resolves class names by **scanning source text**, so a constructed string
+>   like `"bg-{$colour}-50"` is never emitted. `AssetType::badgeClasses()` writes every
+>   variant out in full for exactly this reason.
+> - `tests/Feature/ChartRenderTest.php` renders all four pages with realistic data and
+>   asserts every number in every SVG path is finite. `NaN` leaking into path data is
+>   *the* hand-rolled-chart failure mode, and it renders as silently missing marks rather
+>   than an error — nothing else in the suite would catch it.
 > - **`preventLazyLoading` only arms models from multi-row result sets.**
 >   `Builder::hydrate()` (`Builder.php:476`) stamps the instance flag behind
 >   `if (count($items) > 1)`, so `Asset::first()->values` never throws no matter what the

@@ -10,6 +10,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('dashboard', 'pages::dashboard')->name('dashboard');
 
     Route::livewire('assets', 'pages::assets.index')->name('assets.index');
+    Route::livewire('assets/{asset}', 'pages::assets.show')->name('assets.show');
 
     Route::livewire('month', 'pages::month.show')->name('month.show');
 });

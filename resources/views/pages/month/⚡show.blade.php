@@ -3,6 +3,7 @@
 use App\Models\Asset;
 use App\Models\AssetValue;
 use App\Models\MonthlyFinance;
+use App\Support\Money;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -200,14 +201,24 @@ new #[Title('Month')] class extends Component {
     </div>
 
     <form wire:submit="saveCashFlow" class="mt-8 max-w-md space-y-6">
-        <flux:input wire:model="income" :label="__('Income')" inputmode="decimal" />
+        <flux:input wire:model="income" :label="__('Income')" inputmode="decimal" class="tabular-nums">
+            <x-slot name="iconTrailing">
+                <span class="pe-3 text-sm text-zinc-400 dark:text-zinc-500">kr</span>
+            </x-slot>
+        </flux:input>
 
-        <flux:input wire:model="spending" :label="__('Spending')" inputmode="decimal" />
+        <flux:input wire:model="spending" :label="__('Spending')" inputmode="decimal" class="tabular-nums">
+            <x-slot name="iconTrailing">
+                <span class="pe-3 text-sm text-zinc-400 dark:text-zinc-500">kr</span>
+            </x-slot>
+        </flux:input>
 
         <div class="flex items-center justify-between">
             <flux:text>
-                {{ __('Savings') }}:
-                <span class="font-medium">{{ number_format($this->savings, 2, ',', ' ') }}</span>
+                {{ __('Saved') }}:
+                <span class="font-medium tabular-nums {{ $this->savings < 0 ? 'text-[var(--viz-bad)]' : '' }}">
+                    {{ Money::kr($this->savings) }}
+                </span>
             </flux:text>
 
             <flux:button variant="primary" type="submit">{{ __('Save') }}</flux:button>
@@ -235,10 +246,24 @@ new #[Title('Month')] class extends Component {
                 <flux:table.rows>
                     @foreach ($this->assets as $asset)
                         <flux:table.row :key="$asset->id">
-                            <flux:table.cell variant="strong">{{ $asset->name }}</flux:table.cell>
+                            <flux:table.cell variant="strong">
+                                <span class="flex items-center gap-3">
+                                    <x-asset-icon :type="$asset->type" size="sm" />
+                                    <flux:link :href="route('assets.show', $asset)" wire:navigate>{{ $asset->name }}</flux:link>
+                                </span>
+                            </flux:table.cell>
                             <flux:table.cell>{{ $asset->type->label() }}</flux:table.cell>
                             <flux:table.cell>
-                                <flux:input wire:model="values.{{ $asset->id }}" inputmode="decimal" size="sm" />
+                                <flux:input
+                                    wire:model="values.{{ $asset->id }}"
+                                    inputmode="decimal"
+                                    size="sm"
+                                    class="tabular-nums"
+                                >
+                                    <x-slot name="iconTrailing">
+                                        <span class="pe-3 text-sm text-zinc-400 dark:text-zinc-500">kr</span>
+                                    </x-slot>
+                                </flux:input>
                             </flux:table.cell>
                         </flux:table.row>
                     @endforeach
@@ -248,7 +273,9 @@ new #[Title('Month')] class extends Component {
             <div class="flex items-center justify-between">
                 <flux:text>
                     {{ __('Net worth') }}:
-                    <span class="font-medium">{{ number_format($this->netWorth, 2, ',', ' ') }}</span>
+                    <span class="font-medium tabular-nums {{ $this->netWorth < 0 ? 'text-[var(--viz-bad)]' : '' }}">
+                        {{ Money::kr($this->netWorth) }}
+                    </span>
                 </flux:text>
 
                 <flux:button variant="primary" type="submit">{{ __('Save values') }}</flux:button>
