@@ -27,6 +27,37 @@ Supervisor-managed queue workers, Nginx — comes from this world and not from a
 
 Fly.io, Railway and Render are all fine if you would rather stay container-shaped.
 
+### Why MySQL and not serverless Postgres
+
+Decided deliberately in August 2026, having checked the pricing rather than assumed it.
+
+**Serverless Postgres is not cheaper here.** Laravel Cloud's MySQL **Flex** tier also
+scales to zero — no compute is billed while the database is asleep — so for an app that
+is idle almost all the time both options cost effectively nothing to run. This database
+is currently 352 KB, so storage at ~$0.10/GB-month is a rounding error, and the $5/month
+Starter base fee dominates either way. Postgres's genuine price edge is that it has *no
+minimum size* (billed per fractional compute unit, where MySQL's floor is
+`mysql-flex-512mb`), which only pays off for a database that is awake a lot at low load.
+That is not this app. Note MySQL **Pro** is always-on and *does* bill when idle — Flex is
+the one that hibernates.
+
+Postgres would have brought real non-price benefits: Neon-style database branching per
+pull request, and point-in-time recovery. It would also have removed an existing
+divergence, since Postgres is case-sensitive like the test suite's SQLite, where MySQL's
+`utf8mb4_unicode_ci` is not — so `Test@Example.com` currently logs in and would not on
+Postgres.
+
+**MySQL wins on the only criterion that matters for this project: it is what the team
+runs.** This app is a comprehension vehicle for their stack, so learning Postgres's
+quirks would be off-mission for a saving of roughly zero.
+
+If that ever changes, the migration is small — the audit found only four things:
+`unsignedSmallInteger`/`unsignedTinyInteger` on `year`/`month` lose their
+database-level range constraint (Postgres has no unsigned integers and Laravel silently
+maps them to `smallint`); email lookups need normalisation or `citext` for the case
+change; `whereRaw('(year * 100 + month) >= ?')` and `json('credential')` both port
+as-is.
+
 ---
 
 ## Before the first deploy
