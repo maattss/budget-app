@@ -53,6 +53,12 @@
             "npm install",
             "npm run build"
         ],
+        "setup:ci": [
+            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
+            "@php artisan key:generate",
+            "npm ci",
+            "npm run build"
+        ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
             "@php artisan dev"

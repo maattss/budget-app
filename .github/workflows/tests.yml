@@ -31,8 +31,14 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      # setup:ci deliberately omits `artisan migrate`. The suite runs on in-memory
+      # SQLite (phpunit.xml) and RefreshDatabase migrates it per test, so CI needs no
+      # database server at all. `composer setup` keeps the migrate step for local use.
       - name: Setup Application
-        run: composer setup
+        run: composer setup:ci
 
       - name: Run CI Checks
         run: composer ci:check
