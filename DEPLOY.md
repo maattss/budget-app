@@ -83,8 +83,29 @@ leaks between accounts — every query is scoped through `Auth::user()` and ther
 proving a forged id cannot cross the boundary — but it is an open sign-up on a
 single-user app.
 
-**Create your production account by seeding it deliberately**, not by opening
-registration: `php artisan tinker` on the host, or a one-off seeder you delete after.
+**Create your production account with the bundled command**, not by opening
+registration:
+
+```bash
+php artisan app:create-user --name="Your Name" --email="you@example.com"
+```
+
+Every option is a flag so it runs without a TTY — a remote command runner has nothing to
+prompt against. Omit `--password` and it reads `INITIAL_USER_PASSWORD` from the
+environment, which is preferable in production: a value passed on a command line may be
+recorded in the host's command log, an environment variable is not.
+
+The command marks the email verified. Note it must use `forceFill` to do so, because
+`User` declares `#[Fillable(['name', 'email', 'password'])]` and passing
+`email_verified_at` to `create()` is **silently dropped** —
+`Model::preventSilentlyDiscardingAttributes()` (the second flag in `shouldBeStrict()`)
+is what turns that silence into an exception.
+
+Worth knowing while you are here: the route groups are wrapped in `['auth', 'verified']`,
+but `User` does *not* implement `MustVerifyEmail` — the import is commented out at
+`app/Models/User.php:5` — so that middleware is currently **inert**. If you ever
+uncomment it, every existing user without a verification timestamp is locked out, and
+with `MAIL_MAILER=log` no verification mail would arrive to fix it.
 
 **Disabling a Fortify feature removes its routes.** This caused a real 500 on the first
 deploy: with registration off, `route('register')` no longer resolves, and the starter
