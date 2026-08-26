@@ -33,9 +33,15 @@ Decided deliberately in August 2026, having checked the pricing rather than assu
 
 **Serverless Postgres is not cheaper here.** Laravel Cloud's MySQL **Flex** tier also
 scales to zero — no compute is billed while the database is asleep — so for an app that
-is idle almost all the time both options cost effectively nothing to run. This database
-is currently 352 KB, so storage at ~$0.10/GB-month is a rounding error, and the $5/month
-Starter base fee dominates either way. Postgres's genuine price edge is that it has *no
+is idle almost all the time both options cost effectively nothing in *compute*.
+
+Storage is not free, though — an earlier version of this note wrongly called it a
+rounding error. Laravel MySQL has a **5 GB minimum**, billed continuously even while the
+database sleeps, plus backups (7-day retention by default) at the same
+`$0.10/GB-month`. So the idle floor is roughly **$0.50–1.00/month**, not zero. Serverless
+Postgres bills storage by actual usage instead, which for a 352 KB database really is
+nothing — the one place Postgres is genuinely cheaper here. Both are still dwarfed by the
+$5/month Starter base fee and covered by the $5 usage credit. Postgres's genuine price edge is that it has *no
 minimum size* (billed per fractional compute unit, where MySQL's floor is
 `mysql-flex-512mb`), which only pays off for a database that is awake a lot at low load.
 That is not this app. Note MySQL **Pro** is always-on and *does* bill when idle — Flex is
@@ -79,6 +85,19 @@ single-user app.
 
 **Create your production account by seeding it deliberately**, not by opening
 registration: `php artisan tinker` on the host, or a one-off seeder you delete after.
+
+**Disabling a Fortify feature removes its routes.** This caused a real 500 on the first
+deploy: with registration off, `route('register')` no longer resolves, and the starter
+kit's `pages/auth/login.blade.php` linked to it unconditionally — so *the login page
+itself* threw `Route [register] not defined`. The view is now guarded with
+`@if (Route::has('register'))`, matching how the same file already guarded
+`password.request`.
+
+The suite could not have caught it: `phpunit.xml` sets `FORTIFY_REGISTRATION=true`, so
+tests exercised the opposite configuration from production.
+`tests/Feature/Auth/RegistrationDisabledTest.php` now boots a fresh application with the
+flag off and renders the login page, so the production path is actually covered. If you
+ever disable another Fortify feature, grep the views for `route('<name>')` first.
 
 ### 2. Do not carry `test@example.com` / `password` into production
 
