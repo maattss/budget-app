@@ -124,14 +124,39 @@ new #[Title('Month')] class extends Component {
     }
 
     /**
-     * The current user's assets, in a stable display order.
+     * Every asset belonging to the current user, in a stable display order.
+     *
+     * The form holds one field per asset whichever group it renders in, so loading and
+     * saving stay ungrouped and only the display splits in two.
+     *
+     * @return Collection<int, Asset>
+     */
+    #[Computed]
+    public function allAssets(): Collection
+    {
+        return Auth::user()->assets()->orderBy('name')->get();
+    }
+
+    /**
+     * The things the user owns.
      *
      * @return Collection<int, Asset>
      */
     #[Computed]
     public function assets(): Collection
     {
-        return Auth::user()->assets()->orderBy('name')->get();
+        return $this->allAssets->reject(fn (Asset $asset): bool => $asset->type->isLiability());
+    }
+
+    /**
+     * The things the user owes.
+     *
+     * @return Collection<int, Asset>
+     */
+    #[Computed]
+    public function liabilities(): Collection
+    {
+        return $this->allAssets->filter(fn (Asset $asset): bool => $asset->type->isLiability());
     }
 
     /**
@@ -139,12 +164,12 @@ new #[Title('Month')] class extends Component {
      */
     public function loadAssetValues(): void
     {
-        $stored = AssetValue::whereIn('asset_id', $this->assets->pluck('id'))
+        $stored = AssetValue::whereIn('asset_id', $this->allAssets->pluck('id'))
             ->where('year', $this->year)
             ->where('month', $this->month)
             ->pluck('value', 'asset_id');
 
-        $this->values = $this->assets
+        $this->values = $this->allAssets
             ->mapWithKeys(fn (Asset $asset) => [$asset->id => Money::input($stored->get($asset->id))])
             ->all();
     }
@@ -160,7 +185,7 @@ new #[Title('Month')] class extends Component {
             'values.*' => ['nullable', 'numeric', 'min:0'],
         ]);
 
-        foreach ($this->assets as $asset) {
+        foreach ($this->allAssets as $asset) {
             $assetValue = $this->values[$asset->id] ?? '';
 
             if ($assetValue  === '') {
@@ -179,22 +204,45 @@ new #[Title('Month')] class extends Component {
     }
 
     /**
+     * What the form currently says is owned.
+     */
+    #[Computed]
+    public function assetsTotal(): float
+    {
+        return $this->totalFor($this->assets);
+    }
+
+    /**
+     * What the form currently says is owed.
+     */
+    #[Computed]
+    public function liabilitiesTotal(): float
+    {
+        return $this->totalFor($this->liabilities);
+    }
+
+    /**
      * Assets minus liabilities, for the numbers currently in the form.
      */
     #[Computed]
     public function netWorth(): float
     {
-        $netWorth = 0;
-        foreach ($this->assets as $asset) {
-            $assetValue = Money::parse($this->values[$asset->id] ?? '');
-            if ($asset->type->isLiability()) {
-                $netWorth = $netWorth - (float) $assetValue;
-            } else {
-                $netWorth = $netWorth + (float) $assetValue;
-            }
-        }
+        return $this->assetsTotal - $this->liabilitiesTotal;
+    }
 
-        return $netWorth;
+    /**
+     * The sum of the values currently typed into one group's fields.
+     *
+     * Reads $this->values, not the stored rows, so every total moves as you type. And
+     * Money::parse rather than a bare cast, for the reason savings() gives.
+     *
+     * @param  Collection<int, Asset>  $assets
+     */
+    protected function totalFor(Collection $assets): float
+    {
+        return (float) $assets->sum(
+            fn (Asset $asset): float => (float) Money::parse($this->values[$asset->id] ?? '')
+        );
     }
 }; ?>
 
@@ -230,39 +278,72 @@ new #[Title('Month')] class extends Component {
         <flux:heading>{{ __('Asset values') }}</flux:heading>
         <flux:subheading>{{ __('What each asset was worth this month.') }}</flux:subheading>
 
-        @if ($this->assets->isEmpty())
+        @if ($this->allAssets->isEmpty())
             <flux:text class="mt-2">
                 {{ __('No assets yet.') }}
                 <flux:link :href="route('assets.index')" wire:navigate>{{ __('Add one first.') }}</flux:link>
             </flux:text>
         @else
-        <form wire:submit="saveAssetValues" class="mt-4 space-y-4">
-            <flux:table>
-                <flux:table.columns>
-                    <flux:table.column>{{ __('Asset') }}</flux:table.column>
-                    <flux:table.column>{{ __('Type') }}</flux:table.column>
-                    <flux:table.column>{{ __('Value') }}</flux:table.column>
-                </flux:table.columns>
+        <form wire:submit="saveAssetValues" class="mt-4 space-y-6">
+            {{-- Grouped the same way as the assets page, and for the same reason: what you
+                 own and what you owe pull net worth in opposite directions, so a single
+                 alphabetical list puts a 3 million mortgage next to a 3 million flat with
+                 nothing to say they cancel out. --}}
+            @foreach ([
+                ['heading' => __('Assets'), 'group' => $this->assets, 'total' => $this->assetsTotal, 'sign' => ''],
+                ['heading' => __('Liabilities'), 'group' => $this->liabilities, 'total' => $this->liabilitiesTotal, 'sign' => '−'],
+            ] as $section)
+                @continue($section['group']->isEmpty())
 
-                <flux:table.rows>
-                    @foreach ($this->assets as $asset)
-                        <flux:table.row :key="$asset->id">
-                            <flux:table.cell variant="strong">
-                                <span class="flex items-center gap-3">
+                <div>
+                    <flux:heading>{{ $section['heading'] }}</flux:heading>
+
+                    <div class="mt-2 divide-y divide-zinc-200 overflow-hidden rounded-xl border border-zinc-200 dark:divide-zinc-700 dark:border-zinc-700">
+                        @foreach ($section['group'] as $asset)
+                            {{-- Stacked on a phone, side by side from sm up. This was a
+                                 three-column flux:table, which is table-fixed: every column
+                                 took a third of the viewport whatever it held, so on a phone
+                                 the input was ~110px and clipped the amount mid-digit. A
+                                 flex row gives the field the whole width when there is none
+                                 to spare. --}}
+                            <div
+                                wire:key="asset-value-{{ $asset->id }}"
+                                class="flex flex-col gap-2 bg-white p-4 sm:flex-row sm:items-center sm:gap-4 dark:bg-zinc-900"
+                            >
+                                <div class="flex min-w-0 flex-1 items-center gap-3">
                                     <x-asset-icon :type="$asset->type" size="sm" />
-                                    <flux:link :href="route('assets.show', $asset)" wire:navigate>{{ $asset->name }}</flux:link>
-                                </span>
-                            </flux:table.cell>
-                            <flux:table.cell>{{ $asset->type->label() }}</flux:table.cell>
-                            <flux:table.cell>
-                                <x-money-input wire:model="values.{{ $asset->id }}" size="sm" />
-                            </flux:table.cell>
-                        </flux:table.row>
-                    @endforeach
-                </flux:table.rows>
-            </flux:table>
 
-            <div class="flex items-center justify-between">
+                                    <div class="min-w-0">
+                                        <div class="truncate">
+                                            <flux:link :href="route('assets.show', $asset)" wire:navigate class="font-medium">{{ $asset->name }}</flux:link>
+                                        </div>
+                                        <flux:text size="sm">{{ $asset->type->label() }}</flux:text>
+                                    </div>
+                                </div>
+
+                                {{-- The column header that used to name this field is gone, so
+                                     the field has to name itself to a screen reader. --}}
+                                <div class="sm:w-44">
+                                    <x-money-input
+                                        wire:model="values.{{ $asset->id }}"
+                                        size="sm"
+                                        :aria-label="__('Value of :name this month', ['name' => $asset->name])"
+                                    />
+                                </div>
+                            </div>
+                        @endforeach
+
+                        <div class="flex items-baseline justify-between bg-zinc-50 px-4 py-3 dark:bg-zinc-800/50">
+                            <flux:text size="sm">{{ __('Total') }}</flux:text>
+                            <flux:text size="sm" class="font-medium tabular-nums text-zinc-800 dark:text-zinc-100">
+                                {{ $section['sign'] }}{{ Money::kr($section['total']) }}
+                            </flux:text>
+                        </div>
+                    </div>
+                </div>
+            @endforeach
+
+            <div class="flex flex-wrap items-center justify-between gap-3">
                 <flux:text>
                     {{ __('Net worth') }}:
                     <span class="font-medium tabular-nums {{ $this->netWorth < 0 ? 'text-[var(--viz-bad)]' : '' }}">

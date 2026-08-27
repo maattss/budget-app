@@ -81,7 +81,7 @@ new #[Title('Dashboard')] class extends Component {
      * @return Collection<int, Asset>
      */
     #[Computed]
-    public function assets(): Collection
+    public function allAssets(): Collection
     {
         $earliest = now()->subMonths($this->months - 1)->startOfMonth();
 
@@ -162,7 +162,7 @@ new #[Title('Dashboard')] class extends Component {
      */
     protected function hasValuesIn(int $year, int $month): bool
     {
-        foreach ($this->assets as $asset) {
+        foreach ($this->allAssets as $asset) {
             $hit = $asset->values->first(
                 fn (AssetValue $value): bool => $value->year === $year && $value->month === $month
             );
@@ -207,7 +207,7 @@ new #[Title('Dashboard')] class extends Component {
         $now = now();
         $totals = [];
 
-        foreach ($this->assets as $asset) {
+        foreach ($this->allAssets as $asset) {
             if ($asset->type->isLiability()) {
                 continue;
             }
@@ -233,21 +233,65 @@ new #[Title('Dashboard')] class extends Component {
     }
 
     /**
-     * Total liabilities for the current month, shown alongside the allocation.
+     * The things the user owns.
+     *
+     * @return Collection<int, Asset>
+     */
+    #[Computed]
+    public function assets(): Collection
+    {
+        return $this->allAssets->reject(fn (Asset $asset): bool => $asset->type->isLiability());
+    }
+
+    /**
+     * The things the user owes.
+     *
+     * @return Collection<int, Asset>
+     */
+    #[Computed]
+    public function liabilities(): Collection
+    {
+        return $this->allAssets->filter(fn (Asset $asset): bool => $asset->type->isLiability());
+    }
+
+    /**
+     * Total value of everything owned, this month.
+     */
+    #[Computed]
+    public function assetsTotal(): float
+    {
+        return $this->totalOf($this->assets);
+    }
+
+    /**
+     * Total value of everything owed, this month.
      */
     #[Computed]
     public function liabilitiesTotal(): float
     {
-        $now = now();
-        $total = 0.0;
+        return $this->totalOf($this->liabilities);
+    }
 
-        foreach ($this->assets as $asset) {
-            if ($asset->type->isLiability()) {
-                $total += $this->valueOf($asset, $now->year, $now->month);
-            }
-        }
+    /**
+     * One asset's value this month, for the owned/owed lists.
+     *
+     * Public, like latestValue() on the assets page, because the template calls it -
+     * Livewire binds the view to the component so protected would in fact work, but a
+     * method the markup depends on belongs to this component's public surface.
+     */
+    public function currentValue(Asset $asset): float
+    {
+        return $this->valueOf($asset, now()->year, now()->month);
+    }
 
-        return $total;
+    /**
+     * This month's total across one group of assets.
+     *
+     * @param  Collection<int, Asset>  $assets
+     */
+    protected function totalOf(Collection $assets): float
+    {
+        return (float) $assets->sum(fn (Asset $asset): float => $this->currentValue($asset));
     }
 
     /**
@@ -279,7 +323,7 @@ new #[Title('Dashboard')] class extends Component {
     {
         $total = 0.0;
 
-        foreach ($this->assets as $asset) {
+        foreach ($this->allAssets as $asset) {
             $amount = $this->valueOf($asset, $year, $month);
 
             $total += $asset->type->isLiability() ? -$amount : $amount;
@@ -388,17 +432,67 @@ new #[Title('Dashboard')] class extends Component {
             <flux:subheading>{{ __('What you own, by type, this month') }}</flux:subheading>
 
             <x-chart.stacked-bar class="mt-4" :segments="$this->allocation" :label="__('Asset allocation by type')" />
-
-            @if ($this->liabilitiesTotal > 0)
-                <flux:separator class="my-4" variant="subtle" />
-                <div class="flex items-baseline justify-between">
-                    <flux:text size="sm">{{ __('Liabilities') }}</flux:text>
-                    <flux:text size="sm" class="font-medium tabular-nums">
-                        −{{ Money::kr($this->liabilitiesTotal) }}
-                    </flux:text>
-                </div>
-            @endif
         </div>
+    </div>
+
+    {{-- What the net worth figure is actually made of, split the way it is calculated:
+         the two groups are summed with opposite signs, so they are shown apart rather
+         than as one alphabetical list where a mortgage sits next to a flat. --}}
+    <div class="mt-6 grid items-start gap-6 sm:grid-cols-2">
+        @foreach ([
+            [
+                'heading' => __('Assets'),
+                'caption' => __('What you own'),
+                'group' => $this->assets,
+                'total' => $this->assetsTotal,
+                'sign' => '',
+                'empty' => __('Nothing owned recorded yet.'),
+            ],
+            [
+                'heading' => __('Liabilities'),
+                'caption' => __('What you owe'),
+                'group' => $this->liabilities,
+                'total' => $this->liabilitiesTotal,
+                'sign' => '−',
+                'empty' => __('Nothing owed recorded yet.'),
+            ],
+        ] as $section)
+            <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
+                <div class="flex items-baseline justify-between gap-3">
+                    <flux:heading>{{ $section['heading'] }}</flux:heading>
+                    <flux:heading class="tabular-nums">
+                        {{ $section['total'] > 0 ? $section['sign'] : '' }}{{ Money::kr($section['total']) }}
+                    </flux:heading>
+                </div>
+                <flux:subheading>{{ $section['caption'] }}</flux:subheading>
+
+                @if ($section['group']->isEmpty())
+                    <flux:text class="mt-3">
+                        {{ $section['empty'] }}
+                        <flux:link :href="route('assets.index')" wire:navigate>{{ __('Add one.') }}</flux:link>
+                    </flux:text>
+                @else
+                    <div class="mt-3 divide-y divide-zinc-200 dark:divide-zinc-700">
+                        @foreach ($section['group'] as $asset)
+                            <div class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                                <x-asset-icon :type="$asset->type" size="sm" />
+
+                                <div class="min-w-0 flex-1">
+                                    <div class="truncate">
+                                        <flux:link :href="route('assets.show', $asset)" wire:navigate class="text-sm font-medium">{{ $asset->name }}</flux:link>
+                                    </div>
+                                    <flux:text size="sm">{{ $asset->type->label() }}</flux:text>
+                                </div>
+
+                                <div class="text-end text-sm font-medium tabular-nums text-zinc-800 dark:text-zinc-100">
+                                    {{ Money::kr($this->currentValue($asset)) }}
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+            </div>
+        @endforeach
     </div>
 
     {{-- The table view: every charted value is reachable here, so no number is gated
@@ -409,7 +503,7 @@ new #[Title('Dashboard')] class extends Component {
         @if ($this->recentMonths->isEmpty())
             <flux:text class="mt-2">{{ __('No months recorded yet.') }}</flux:text>
         @else
-            <flux:table class="mt-3">
+            <flux:table class="mt-3 min-w-[30rem]">
                 <flux:table.columns>
                     <flux:table.column>{{ __('Month') }}</flux:table.column>
                     <flux:table.column align="end">{{ __('Income') }}</flux:table.column>

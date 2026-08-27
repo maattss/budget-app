@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AssetType;
 use App\Models\Asset;
 use App\Models\User;
 use App\Support\Money;
@@ -186,4 +187,53 @@ test('genuinely non-numeric input is still rejected', function () {
         ->set('spending', '0')
         ->call('saveCashFlow')
         ->assertHasErrors(['income' => 'numeric']);
+});
+
+/**
+ * Grouping, and the totals that make grouping worth having. The form used to be one
+ * alphabetical list, which put a 3 000 000 mortgage next to a 3 000 000 flat with
+ * nothing on screen to say the two cancel out.
+ */
+test('the month form separates what is owned from what is owed', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $car = Asset::factory()->for($user)->ofType(AssetType::Car)->create(['name' => 'Bil']);
+    $mortgage = Asset::factory()->for($user)->ofType(AssetType::Mortgage)->create(['name' => 'Boliglån']);
+
+    $page = Livewire::test('pages::month.show')
+        ->set("values.{$car->id}", '300 000')
+        ->set("values.{$mortgage->id}", '2 000 000')
+        ->assertSee(Money::kr(300000))      // owned subtotal
+        ->assertSee(Money::kr(2000000))     // owed subtotal
+        ->assertSee(Money::kr(-1700000));   // and a car does not offset a mortgage
+
+    // Split at the second heading and assert what is on each side. assertSeeInOrder is
+    // not enough on its own here: render the mortgage in both groups and the order
+    // Assets -> Bil -> Liabilities -> Boliglån still holds, because the correctly
+    // grouped copy satisfies it. What has to be asserted is the absence.
+    $html = $page->html();
+
+    expect($html)->toContain('Liabilities');
+
+    [$owned, $owed] = explode('Liabilities', $html, 2);
+
+    expect($owned)->toContain('Bil')
+        ->and($owned)->not->toContain('Boliglån')
+        ->and($owed)->toContain('Boliglån');
+});
+
+/**
+ * A group with nothing in it renders no heading at all, so someone who only tracks a
+ * bank account is not asked to read past an empty "Liabilities".
+ */
+test('a group with no assets in it is left out entirely', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    Asset::factory()->for($user)->ofType(AssetType::BankAccount)->create(['name' => 'Sparekonto']);
+
+    Livewire::test('pages::month.show')
+        ->assertSee('Sparekonto')
+        ->assertDontSee('Liabilities');
 });
