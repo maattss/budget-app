@@ -4,8 +4,8 @@ namespace Database\Factories;
 
 use App\Models\MonthlyFinance;
 use App\Models\User;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Carbon;
 
 /**
  * @extends Factory<MonthlyFinance>
@@ -38,7 +38,7 @@ class MonthlyFinanceFactory extends Factory
     /**
      * Record the row in a specific month. See AssetValueFactory::in() for why a date.
      */
-    public function in(Carbon $date): static
+    public function in(CarbonInterface $date): static
     {
         return $this->state([
             'year' => $date->year,

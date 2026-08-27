@@ -15,8 +15,13 @@ use Livewire\Component;
 new #[Title('Dashboard')] class extends Component {
     /**
      * How many months of history the trend charts show.
+     *
+     * A constant rather than a public property. Nothing in the UI changes it, and a
+     * public Livewire property round-trips through the browser - so as state it was
+     * only ever an input nobody validated. window() below builds a row per month, so a
+     * crafted request asking for a million of them allocates gigabytes before it fails.
      */
-    public int $months = 12;
+    protected const MONTHS = 12;
 
     /**
      * Every cash flow row the user has, keyed by year * 100 + month.
@@ -94,7 +99,7 @@ new #[Title('Dashboard')] class extends Component {
     #[Computed]
     public function window(): array
     {
-        return collect(range($this->months - 1, 0))
+        return collect(range(self::MONTHS - 1, 0))
             ->map(function (int $back): array {
                 $date = now()->subMonths($back);
 
@@ -307,12 +312,12 @@ new #[Title('Dashboard')] class extends Component {
     {{-- Net worth over time. One series, so the heading names it and no legend is needed. --}}
     <div class="mt-8 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
         <flux:heading>{{ __('Net worth') }}</flux:heading>
-        <flux:subheading>{{ __('Assets minus liabilities, last :count months', ['count' => $this->months]) }}</flux:subheading>
+        <flux:subheading>{{ __('Assets minus liabilities, last :count months', ['count' => $this::MONTHS]) }}</flux:subheading>
 
         <x-chart.area
             class="mt-4"
             :points="$this->netWorthSeries"
-            :label="__('Net worth over the last :count months', ['count' => $this->months])"
+            :label="__('Net worth over the last :count months', ['count' => $this::MONTHS])"
         />
     </div>
 
@@ -320,7 +325,7 @@ new #[Title('Dashboard')] class extends Component {
         {{-- Two series, so a legend is always present. --}}
         <div class="rounded-xl border border-zinc-200 bg-white p-5 lg:col-span-3 dark:border-zinc-700 dark:bg-zinc-900">
             <flux:heading>{{ __('Income & spending') }}</flux:heading>
-            <flux:subheading>{{ __('Per month, last :count months', ['count' => $this->months]) }}</flux:subheading>
+            <flux:subheading>{{ __('Per month, last :count months', ['count' => $this::MONTHS]) }}</flux:subheading>
 
             <x-chart.columns
                 class="mt-4"
