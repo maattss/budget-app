@@ -2,11 +2,16 @@
 
 namespace App\Models;
 
+use Database\Factories\AssetValueFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AssetValue extends Model
 {
+    /** @use HasFactory<AssetValueFactory> */
+    use HasFactory;
+
     protected $fillable = [
         'asset_id',
         'year',

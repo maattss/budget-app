@@ -2,6 +2,8 @@
 
 use App\Enums\AssetType;
 use App\Models\Asset;
+use App\Models\AssetValue;
+use App\Models\MonthlyFinance;
 use App\Models\User;
 use App\Support\Money;
 use Livewire\Livewire;
@@ -54,4 +56,30 @@ test('the dashboard groups this month\'s holdings into owned and owed', function
     expect($owned)->toContain('Bil')
         ->and($owned)->not->toContain('Boliglån')
         ->and($owed)->toContain('Boliglån');
+});
+
+/**
+ * Every read on this page goes through Auth::user()'s relations, which is what keeps
+ * one user's holdings out of another's net worth. That is a property of how the
+ * queries are written rather than of anything the framework enforces, so it is worth
+ * a test that fails loudly if someone "simplifies" a relation into a bare
+ * Asset::all() or MonthlyFinance::all().
+ */
+test('the dashboard shows nothing belonging to another user', function () {
+    $user = User::factory()->create();
+    $stranger = User::factory()->create();
+
+    Asset::factory()->for($stranger)->ofType(AssetType::Property)->create(['name' => 'Fremmedhus'])
+        ->values()->save(AssetValue::factory()->worth(9_000_000)->make());
+
+    MonthlyFinance::factory()->for($stranger)->of(123_456, 1_000)->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::dashboard')
+        ->assertDontSee('Fremmedhus')
+        ->assertDontSee(Money::kr(9_000_000))
+        ->assertDontSee(Money::kr(123_456))
+        // Its own net worth, not the stranger's.
+        ->assertSee(Money::kr(0));
 });

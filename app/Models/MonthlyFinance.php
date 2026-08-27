@@ -2,12 +2,17 @@
 
 namespace App\Models;
 
+use Database\Factories\MonthlyFinanceFactory;
 use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class MonthlyFinance extends Model
 {
+    /** @use HasFactory<MonthlyFinanceFactory> */
+    use HasFactory;
+
     protected $fillable = [
         'user_id',
         'year',
