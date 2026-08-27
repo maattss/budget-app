@@ -19,6 +19,17 @@ pest()->extend(TestCase::class)
     ->in('Feature');
 
 /*
+ * Unit tests get the application, but deliberately not RefreshDatabase.
+ *
+ * Eloquent needs a booted container even for a model that never touches the database:
+ * Model::resolveConnection() reads a static resolver that only exists once the app is
+ * up, so an in-memory Asset::make() fatals without this. Leaving RefreshDatabase off
+ * is the part that matters - these tests build their fixtures in memory and must stay
+ * migration-free, and therefore fast.
+ */
+pest()->extend(TestCase::class)->in('Unit');
+
+/*
 |--------------------------------------------------------------------------
 | Expectations
 |--------------------------------------------------------------------------

@@ -6,7 +6,17 @@ use Database\Factories\AssetValueFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property int $id
+ * @property int $asset_id
+ * @property int $year
+ * @property int $month
+ * @property string $value
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ */
 class AssetValue extends Model
 {
     /** @use HasFactory<AssetValueFactory> */

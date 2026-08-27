@@ -4,6 +4,7 @@ use App\Enums\AssetType;
 use App\Models\Asset;
 use App\Models\AssetValue;
 use App\Support\Money;
+use App\Support\Portfolio;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -41,7 +42,7 @@ class extends Component {
     #[Computed]
     public function assets(): Collection
     {
-        return $this->allAssets()->reject(fn (Asset $asset): bool => $asset->type->isLiability());
+        return $this->portfolio->owned();
     }
 
     /**
@@ -52,7 +53,7 @@ class extends Component {
     #[Computed]
     public function liabilities(): Collection
     {
-        return $this->allAssets()->filter(fn (Asset $asset): bool => $asset->type->isLiability());
+        return $this->portfolio->owed();
     }
 
     /**
@@ -61,7 +62,7 @@ class extends Component {
     #[Computed]
     public function assetsTotal(): float
     {
-        return $this->assets->sum(fn (Asset $asset): float => $this->latestValue($asset));
+        return $this->portfolio->ownedTotal(now()->year, now()->month);
     }
 
     /**
@@ -70,7 +71,7 @@ class extends Component {
     #[Computed]
     public function liabilitiesTotal(): float
     {
-        return $this->liabilities->sum(fn (Asset $asset): float => $this->latestValue($asset));
+        return $this->portfolio->owedTotal(now()->year, now()->month);
     }
 
     /**
@@ -188,7 +189,7 @@ class extends Component {
      */
     protected function forgetAssets(): void
     {
-        unset($this->allAssets, $this->assets, $this->liabilities, $this->assetsTotal, $this->liabilitiesTotal);
+        unset($this->portfolio, $this->assets, $this->liabilities, $this->assetsTotal, $this->liabilitiesTotal);
     }
 
     /**
@@ -204,21 +205,18 @@ class extends Component {
     }
 
     /**
-     * Every asset belonging to the current user, loaded once per request.
+     * Everything the user owns and owes, loaded once per request.
      *
      * The values are eager loaded because every row draws a sparkline and a current
-     * value - without ->with() that is a query per asset, twice over. The whole history
-     * is loaded, not just the sparkline's window; see history() for why.
+     * value - without them that is a query per asset, twice over. The whole history is
+     * loaded, not just the sparkline's window; see history() for why.
      *
-     * @return Collection<int, Asset>
+     * @see \App\Support\Portfolio
      */
     #[Computed]
-    protected function allAssets(): Collection
+    protected function portfolio(): Portfolio
     {
-        return Auth::user()->assets()
-            ->orderBy('name')
-            ->with('values')
-            ->get();
+        return Portfolio::for(Auth::user());
     }
 }; ?>
 

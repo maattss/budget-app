@@ -4,11 +4,22 @@ namespace App\Models;
 
 use App\Enums\AssetType;
 use Database\Factories\AssetFactory;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property int $id
+ * @property int $user_id
+ * @property string $name
+ * @property AssetType $type
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Collection<int, AssetValue> $values
+ */
 class Asset extends Model
 {
     /** @use HasFactory<AssetFactory> */
@@ -68,6 +79,25 @@ class Asset extends Model
      * Reads the loaded collection rather than querying, so a page that has eager loaded
      * values can call this for every asset and every month without a single extra query.
      */
+    /**
+     * The value actually recorded in one month, or null if none was.
+     *
+     * The counterpart to valueAt(), and deliberately not the same thing. valueAt()
+     * answers "what was this worth then", carrying earlier values forward; this answers
+     * "what did the user type for this month", and carries nothing.
+     *
+     * The month form needs this one. Prefilling its fields with a carried-forward figure
+     * would put a number in an empty box that the user never entered, and saving the
+     * form would then write it back as though they had - one unedited visit to an old
+     * month and a guess becomes a record.
+     */
+    public function recordedValueIn(int $year, int $month): ?AssetValue
+    {
+        return $this->values->first(
+            fn (AssetValue $value): bool => $value->year === $year && $value->month === $month
+        );
+    }
+
     public function valueAt(int $year, int $month): float
     {
         $target = $year * 100 + $month;

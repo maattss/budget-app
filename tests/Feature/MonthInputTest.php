@@ -112,3 +112,71 @@ test('a rejected value is explained without leaking the field name', function ()
     expect($errors[0])->not->toContain('values.')
         ->and($errors[0])->not->toContain((string) $asset->id);
 });
+
+/**
+ * The form reads what was recorded for this month, never what was carried into it.
+ *
+ * Net worth carries the last known value forward, and it would be easy to make the
+ * form do the same "for convenience". It must not: a carried figure in an empty box
+ * is a number the user never typed, and saving the form would write it back as though
+ * they had. One unedited visit to an old month and a guess becomes a record - which
+ * then carries forward itself.
+ */
+test('a field stays empty in a month nothing was recorded in', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $asset = Asset::factory()->for($user)->ofType(AssetType::Property)->create();
+
+    $recorded = now()->subMonths(3);
+    $asset->values()->create(['year' => $recorded->year, 'month' => $recorded->month, 'value' => 4_000_000]);
+
+    Livewire::test('pages::month.show')
+        ->assertSet('values.'.$asset->id, '')
+        // Saving an untouched form must not turn the carried value into a new row.
+        ->call('saveAssetValues')
+        ->assertHasNoErrors();
+
+    expect($asset->values()->count())->toBe(1);
+});
+
+/**
+ * Stepping between months re-reads the fields from the loaded histories rather than
+ * requerying, so this guards the memo as much as the display: a stale collection would
+ * show the previous month's figures under the new month's heading.
+ */
+test('stepping to another month shows that month\'s figures', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $asset = Asset::factory()->for($user)->ofType(AssetType::BankAccount)->create();
+
+    $last = now()->subMonth();
+    $asset->values()->create(['year' => $last->year, 'month' => $last->month, 'value' => 111]);
+    $asset->values()->create(['year' => now()->year, 'month' => now()->month, 'value' => 222]);
+
+    Livewire::test('pages::month.show')
+        ->assertSet('values.'.$asset->id, '222')
+        ->call('previousMonth')
+        ->assertSet('values.'.$asset->id, '111')
+        ->call('nextMonth')
+        ->assertSet('values.'.$asset->id, '222');
+});
+
+/**
+ * A save has to invalidate the loaded histories, or the reload that follows it reads a
+ * collection older than the write and redisplays the figure the user just replaced.
+ */
+test('a saved value is what the form shows afterwards', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $asset = Asset::factory()->for($user)->ofType(AssetType::BankAccount)->create();
+    $asset->values()->create(['year' => now()->year, 'month' => now()->month, 'value' => 100]);
+
+    Livewire::test('pages::month.show')
+        ->set('values.'.$asset->id, '999')
+        ->call('saveAssetValues')
+        ->assertHasNoErrors()
+        ->assertSet('values.'.$asset->id, '999');
+});

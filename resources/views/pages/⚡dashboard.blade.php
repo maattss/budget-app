@@ -1,9 +1,9 @@
 <?php
 
 use App\Models\Asset;
-use App\Models\AssetValue;
 use App\Models\MonthlyFinance;
 use App\Support\Money;
+use App\Support\Portfolio;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Carbon;
@@ -68,31 +68,22 @@ new #[Title('Dashboard')] class extends Component {
     #[Computed]
     public function netWorth(): float
     {
-        return $this->netWorthFor(now()->year, now()->month);
+        return $this->portfolio->netWorth(now()->year, now()->month);
     }
 
     /**
-     * The user's assets with their whole value history eager loaded.
+     * Everything the user owns and owes, loaded once for the whole page.
      *
-     * One query for the assets and one for their values, whatever the asset count -
-     * netWorthFor() and the allocation both read ->values per asset, which without the
-     * eager load would be a query per asset per call.
+     * Two queries whatever the asset count. Every figure below - the hero tile, the
+     * twelve points of the trend line, the allocation bar, both group totals - is
+     * answered from this one in-memory collection.
      *
-     * The history is deliberately unbounded rather than clipped to the charted window.
-     * Asset::valueAt() carries the last recorded value forward, so an asset valued two
-     * years ago still counts today - and clipping the load to twelve months would hide
-     * exactly the row it needs to find. A personal budget accrues twelve rows per asset
-     * per year; the whole history is smaller than the window query it replaces.
-     *
-     * @return Collection<int, Asset>
+     * @see \App\Support\Portfolio
      */
     #[Computed]
-    public function allAssets(): Collection
+    public function portfolio(): Portfolio
     {
-        return Auth::user()->assets()
-            ->orderBy('name')
-            ->with('values')
-            ->get();
+        return Portfolio::for(Auth::user());
     }
 
     /**
@@ -130,8 +121,8 @@ new #[Title('Dashboard')] class extends Component {
     {
         return array_map(fn (array $month): array => [
             'label' => $month['label'],
-            'value' => $this->hasAnyValueBy($month['year'], $month['month'])
-                ? $this->netWorthFor($month['year'], $month['month'])
+            'value' => $this->portfolio->hasAnyValueBy($month['year'], $month['month'])
+                ? $this->portfolio->netWorth($month['year'], $month['month'])
                 : null,
         ], $this->window);
     }
@@ -158,31 +149,6 @@ new #[Title('Dashboard')] class extends Component {
     }
 
     /**
-     * Whether anything at all had been recorded by the end of the given month.
-     *
-     * The net worth series is null before this point and a number after it. That line
-     * is where "you had nothing" and "you had not started tracking" divide: charting the
-     * months before the first entry as zero would claim the user was broke, when the
-     * data only says they had not begun. After the first entry every month has a
-     * defined net worth, because valueAt() carries values forward - so the series is
-     * continuous from there rather than gapped wherever a month went unrecorded.
-     */
-    protected function hasAnyValueBy(int $year, int $month): bool
-    {
-        $target = $year * 100 + $month;
-
-        foreach ($this->allAssets as $asset) {
-            $first = $asset->values->first();
-
-            if ($first !== null && $first->year * 100 + $first->month <= $target) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * Income and spending per month across the window, for the grouped columns.
      *
      * @return array<int, array{label: string, values: array<int, float>}>
@@ -203,40 +169,12 @@ new #[Title('Dashboard')] class extends Component {
     /**
      * This month's asset value grouped by type, for the allocation bar.
      *
-     * Liabilities are excluded: mixing what you own with what you owe in a
-     * part-to-whole chart would make the "whole" meaningless.
-     *
      * @return array<int, array{name: string, value: float, var: string}>
      */
     #[Computed]
     public function allocation(): array
     {
-        $now = now();
-        $totals = [];
-
-        foreach ($this->allAssets as $asset) {
-            if ($asset->type->isLiability()) {
-                continue;
-            }
-
-            $amount = $this->valueOf($asset, $now->year, $now->month);
-
-            if ($amount <= 0) {
-                continue;
-            }
-
-            $key = $asset->type->value;
-            $totals[$key] ??= [
-                'name' => $asset->type->label(),
-                'value' => 0.0,
-                'var' => '--viz-'.$asset->type->seriesSlot(),
-            ];
-            $totals[$key]['value'] += $amount;
-        }
-
-        usort($totals, fn (array $a, array $b): int => $b['value'] <=> $a['value']);
-
-        return $totals;
+        return $this->portfolio->allocation(now()->year, now()->month);
     }
 
     /**
@@ -247,7 +185,7 @@ new #[Title('Dashboard')] class extends Component {
     #[Computed]
     public function assets(): Collection
     {
-        return $this->allAssets->reject(fn (Asset $asset): bool => $asset->type->isLiability());
+        return $this->portfolio->owned();
     }
 
     /**
@@ -258,7 +196,7 @@ new #[Title('Dashboard')] class extends Component {
     #[Computed]
     public function liabilities(): Collection
     {
-        return $this->allAssets->filter(fn (Asset $asset): bool => $asset->type->isLiability());
+        return $this->portfolio->owed();
     }
 
     /**
@@ -267,7 +205,7 @@ new #[Title('Dashboard')] class extends Component {
     #[Computed]
     public function assetsTotal(): float
     {
-        return $this->totalOf($this->assets);
+        return $this->portfolio->ownedTotal(now()->year, now()->month);
     }
 
     /**
@@ -276,7 +214,7 @@ new #[Title('Dashboard')] class extends Component {
     #[Computed]
     public function liabilitiesTotal(): float
     {
-        return $this->totalOf($this->liabilities);
+        return $this->portfolio->owedTotal(now()->year, now()->month);
     }
 
     /**
@@ -288,17 +226,7 @@ new #[Title('Dashboard')] class extends Component {
      */
     public function currentValue(Asset $asset): float
     {
-        return $this->valueOf($asset, now()->year, now()->month);
-    }
-
-    /**
-     * This month's total across one group of assets.
-     *
-     * @param  Collection<int, Asset>  $assets
-     */
-    protected function totalOf(Collection $assets): float
-    {
-        return (float) $assets->sum(fn (Asset $asset): float => $this->currentValue($asset));
+        return $asset->valueAt(now()->year, now()->month);
     }
 
     /**
@@ -323,29 +251,6 @@ new #[Title('Dashboard')] class extends Component {
         return $this->finances->get($year * 100 + $month);
     }
 
-    /**
-     * Assets minus liabilities for one month, from the already-loaded values.
-     */
-    protected function netWorthFor(int $year, int $month): float
-    {
-        $total = 0.0;
-
-        foreach ($this->allAssets as $asset) {
-            $amount = $this->valueOf($asset, $year, $month);
-
-            $total += $asset->type->isLiability() ? -$amount : $amount;
-        }
-
-        return $total;
-    }
-
-    /**
-     * One asset's value in one month, carrying the last recorded value forward.
-     */
-    protected function valueOf(Asset $asset, int $year, int $month): float
-    {
-        return $asset->valueAt($year, $month);
-    }
 }; ?>
 
 <section class="w-full max-w-5xl">

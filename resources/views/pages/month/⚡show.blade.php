@@ -1,9 +1,8 @@
 <?php
 
 use App\Models\Asset;
-use App\Models\AssetValue;
-use App\Models\MonthlyFinance;
 use App\Support\Money;
+use App\Support\Portfolio;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -149,6 +148,21 @@ new #[Title('Month')] class extends Component {
     }
 
     /**
+     * Everything the user owns and owes.
+     *
+     * This page needs the owned/owed split for display and nothing else from Portfolio:
+     * its totals come from what is currently typed into the form, not from what is
+     * stored, so that every figure moves as you type.
+     *
+     * @see \App\Support\Portfolio
+     */
+    #[Computed]
+    public function portfolio(): Portfolio
+    {
+        return Portfolio::for(Auth::user());
+    }
+
+    /**
      * Every asset belonging to the current user, in a stable display order.
      *
      * The form holds one field per asset whichever group it renders in, so loading and
@@ -159,7 +173,7 @@ new #[Title('Month')] class extends Component {
     #[Computed]
     public function allAssets(): Collection
     {
-        return Auth::user()->assets()->orderBy('name')->get();
+        return $this->portfolio->all();
     }
 
     /**
@@ -170,7 +184,7 @@ new #[Title('Month')] class extends Component {
     #[Computed]
     public function assets(): Collection
     {
-        return $this->allAssets->reject(fn (Asset $asset): bool => $asset->type->isLiability());
+        return $this->portfolio->owned();
     }
 
     /**
@@ -181,21 +195,26 @@ new #[Title('Month')] class extends Component {
     #[Computed]
     public function liabilities(): Collection
     {
-        return $this->allAssets->filter(fn (Asset $asset): bool => $asset->type->isLiability());
+        return $this->portfolio->owed();
     }
 
     /**
-     * Fill $values from asset_values for the selected month.
+     * Fill $values from what was recorded for the selected month.
+     *
+     * Read from the already-loaded histories rather than queried per month: the
+     * portfolio arrives with every value attached, so stepping between months costs no
+     * further round trip.
+     *
+     * recordedValueIn(), not valueAt(). A field must show what the user actually typed
+     * for this month and stay empty otherwise - prefilling with a carried-forward figure
+     * would then let one unedited visit to an old month save a guess as a record.
      */
     public function loadAssetValues(): void
     {
-        $stored = AssetValue::whereIn('asset_id', $this->allAssets->pluck('id'))
-            ->where('year', $this->year)
-            ->where('month', $this->month)
-            ->pluck('value', 'asset_id');
-
         $this->values = $this->allAssets
-            ->mapWithKeys(fn (Asset $asset) => [$asset->id => Money::input($stored->get($asset->id))])
+            ->mapWithKeys(fn (Asset $asset) => [
+                $asset->id => Money::input($asset->recordedValueIn($this->year, $this->month)?->value),
+            ])
             ->all();
     }
 
@@ -238,6 +257,10 @@ new #[Title('Month')] class extends Component {
                 ['value' => $assetValue]
             );
         }
+
+        // The loaded histories are now a request older than the database, and
+        // loadAssetValues() below reads them. Drop the memo so it re-reads.
+        unset($this->portfolio, $this->allAssets, $this->assets, $this->liabilities);
 
         $this->loadAssetValues();
 
