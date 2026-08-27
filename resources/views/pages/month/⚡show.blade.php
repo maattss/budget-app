@@ -31,7 +31,7 @@ new #[Title('Month')] class extends Component {
     public array $values = [];
 
     /**
-     * Start on the current month.
+     * Start on the current month, or on whichever month the url asks for.
      */
     public function mount(): void
     {
@@ -40,8 +40,33 @@ new #[Title('Month')] class extends Component {
         $this->year ??= $now->year;
         $this->month ??= $now->month;
 
+        // #[Url] means these two arrive from the address bar, so they are user input and
+        // get checked like any other. ?month=99 used to be taken at face value, and
+        // Carbon happily overflowed it: one click of "previous month" from month 99 of
+        // 2026 landed on February 2034.
+        if (! $this->isRealMonth($this->year, $this->month)) {
+            $this->year = $now->year;
+            $this->month = $now->month;
+        }
+
         $this->loadCashFlow();
         $this->loadAssetValues();
+    }
+
+    /**
+     * Whether a year and month pair names a month a person could mean.
+     *
+     * The year bounds are deliberately loose. This rejects nonsense, it does not decide
+     * how far back someone is allowed to record - a user back-filling a decade of
+     * history is doing something reasonable, and being bounced to the current month for
+     * it would be the app second-guessing them.
+     */
+    protected function isRealMonth(int $year, int $month): bool
+    {
+        return $month >= 1
+            && $month <= 12
+            && $year >= 1900
+            && $year <= 2200;
     }
 
     /**
@@ -183,18 +208,34 @@ new #[Title('Month')] class extends Component {
 
         $this->validate([
             'values.*' => ['nullable', 'numeric', 'min:0'],
+        ], [
+            // The field is labelled with the asset's name, so the default message - "The
+            // values.7 field must be at least 0" - would introduce an array index the
+            // user has never seen and cannot map back to a row.
+            'values.*.numeric' => __('Enter an amount, or leave this blank.'),
+            'values.*.min' => __('An amount cannot be negative.'),
         ]);
 
         foreach ($this->allAssets as $asset) {
             $assetValue = $this->values[$asset->id] ?? '';
 
-            if ($assetValue  === '') {
+            // Blank means "there is no figure for this month", which is a different
+            // claim from the one already stored - so the row goes. Skipping empties
+            // instead made clearing a field a silent no-op: the user was told the save
+            // succeeded and the old number came straight back on reload. Now that values
+            // carry forward, a wrong figure left in place propagates onwards too.
+            if ($assetValue === '') {
+                $asset->values()
+                    ->where('year', $this->year)
+                    ->where('month', $this->month)
+                    ->delete();
+
                 continue;
             }
 
             $asset->values()->updateOrCreate(
                 ['year' => $this->year, 'month' => $this->month],
-                ['value' => $assetValue ]
+                ['value' => $assetValue]
             );
         }
 
