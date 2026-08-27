@@ -31,8 +31,11 @@ class extends Component {
 
     /**
      * How many months of history the row sparklines show.
+     *
+     * A constant, for the reason the dashboard's copy gives: nothing changes it, and as
+     * a public property it was an unvalidated input arriving from the browser.
      */
-    public int $months = 12;
+    protected const MONTHS = 12;
 
     /**
      * The things the user owns.
@@ -94,7 +97,7 @@ class extends Component {
      */
     public function history(Asset $asset): array
     {
-        $earliest = now()->subMonths($this->months - 1)->startOfMonth();
+        $earliest = now()->subMonths(self::MONTHS - 1)->startOfMonth();
         $cutoff = $earliest->year * 100 + $earliest->month;
 
         return $asset->values
