@@ -4,8 +4,8 @@ namespace Database\Factories;
 
 use App\Models\Asset;
 use App\Models\AssetValue;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Carbon;
 
 /**
  * @extends Factory<AssetValue>
@@ -37,7 +37,7 @@ class AssetValueFactory extends Factory
      * each call site is how a test ends up asserting against December of last year on
      * the first of January.
      */
-    public function in(Carbon $date): static
+    public function in(CarbonInterface $date): static
     {
         return $this->state([
             'year' => $date->year,
