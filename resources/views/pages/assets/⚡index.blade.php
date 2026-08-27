@@ -19,6 +19,16 @@ class extends Component {
     public string $type = '';
 
     /**
+     * The asset open in the edit modal. Client-controlled, so every read of it goes
+     * through the current user's relation rather than Asset::find().
+     */
+    public ?int $editingId = null;
+
+    public string $editingName = '';
+
+    public string $editingType = '';
+
+    /**
      * How many months of history the row sparklines show.
      */
     public int $months = 12;
@@ -86,18 +96,87 @@ class extends Component {
      */
     public function save(): void
     {
-        $validated = $this->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'type' => ['required', Rule::enum(AssetType::class)],
-        ]);
+        $validated = $this->validate($this->assetRules('name', 'type'));
 
         Auth::user()->assets()->create($validated);
 
         $this->reset(['name', 'type']);
 
-        unset($this->allAssets, $this->assets, $this->liabilities, $this->assetsTotal, $this->liabilitiesTotal);
+        $this->forgetAssets();
 
         Flux::toast(text: __('Asset added.'), variant: 'success');
+    }
+
+    /**
+     * Open the edit modal for one of the current user's assets.
+     */
+    public function edit(int $assetId): void
+    {
+        $asset = Auth::user()->assets()->findOrFail($assetId);
+
+        $this->editingId = $asset->id;
+        $this->editingName = $asset->name;
+        $this->editingType = $asset->type->value;
+
+        // Otherwise an error left over from a previous edit greets the next one.
+        $this->resetValidation();
+
+        Flux::modal('edit-asset')->show();
+    }
+
+    /**
+     * Save the open asset's name and type.
+     *
+     * Re-typing is the point as much as renaming: an asset entered before its type
+     * existed - a car recorded as "Other asset" - can be moved without deleting it and
+     * losing every value recorded against it.
+     */
+    public function saveEdit(): void
+    {
+        $validated = $this->validate($this->assetRules('editingName', 'editingType'));
+
+        // Scoped through the relation, exactly as delete() and the month form are:
+        // $editingId arrives from the browser, and Asset::find() would hand back another
+        // user's row and let this rename it.
+        $asset = Auth::user()->assets()->findOrFail($this->editingId);
+
+        $asset->update([
+            'name' => $validated['editingName'],
+            'type' => $validated['editingType'],
+        ]);
+
+        $this->reset(['editingId', 'editingName', 'editingType']);
+
+        $this->forgetAssets();
+
+        Flux::modal('edit-asset')->close();
+
+        Flux::toast(text: __('Asset updated.'), variant: 'success');
+    }
+
+    /**
+     * The rules for one asset's editable fields, under whichever property names the
+     * form uses.
+     *
+     * Shared so the two paths cannot drift: an edit form that validates less than the
+     * add form is how an asset with no type or a 300-character name gets in.
+     *
+     * @return array<string, array<int, mixed>>
+     */
+    protected function assetRules(string $nameField, string $typeField): array
+    {
+        return [
+            $nameField => ['required', 'string', 'max:255'],
+            $typeField => ['required', Rule::enum(AssetType::class)],
+        ];
+    }
+
+    /**
+     * Drop the memoised collections after a write, so the page re-reads them.
+     */
+    protected function forgetAssets(): void
+    {
+        unset($this->allAssets, $this->assets, $this->liabilities, $this->assetsTotal, $this->liabilitiesTotal);
     }
 
     /**
@@ -107,7 +186,7 @@ class extends Component {
     {
         Auth::user()->assets()->findOrFail($assetId)->delete();
 
-        unset($this->allAssets, $this->assets, $this->liabilities, $this->assetsTotal, $this->liabilitiesTotal);
+        $this->forgetAssets();
 
         Flux::toast(text: __('Asset deleted.'), variant: 'success');
     }
@@ -153,21 +232,7 @@ class extends Component {
             <flux:input wire:model="name" :label="__('Name')" class="min-w-48 flex-1" />
 
             <flux:select wire:model="type" :label="__('Type')" :placeholder="__('Choose a type')" class="w-56">
-                {{-- Real <optgroup>, not disabled value="" options. flux:select renders a
-                     native <select> and injects the placeholder as
-                     <option value="" disabled selected>; a second empty-valued option
-                     later in the markup wins the selection and the placeholder is lost. --}}
-                <optgroup label="{{ __('Assets') }}">
-                    @foreach (AssetType::assets() as $assetType)
-                        <flux:select.option value="{{ $assetType->value }}">{{ $assetType->label() }}</flux:select.option>
-                    @endforeach
-                </optgroup>
-
-                <optgroup label="{{ __('Liabilities') }}">
-                    @foreach (AssetType::liabilities() as $assetType)
-                        <flux:select.option value="{{ $assetType->value }}">{{ $assetType->label() }}</flux:select.option>
-                    @endforeach
-                </optgroup>
+                <x-asset-type-options />
             </flux:select>
 
             <flux:button variant="primary" type="submit" class="mt-6">{{ __('Add') }}</flux:button>
@@ -191,11 +256,13 @@ class extends Component {
                                 <x-asset-icon :type="$asset->type" />
 
                                 <div class="min-w-0 flex-1">
-                                    <flux:link
-                                        :href="route('assets.show', $asset)"
-                                        wire:navigate
-                                        class="block truncate font-medium"
-                                    >{{ $asset->name }}</flux:link>
+                                    {{-- truncate on the wrapper, not the link: flux:link carries
+                                         its own `inline`, and Tailwind emits .inline after .block, so
+                                         the link stays inline whatever this element's class order says
+                                         - and overflow:hidden does nothing to an inline box. --}}
+                                    <div class="truncate">
+                                        <flux:link :href="route('assets.show', $asset)" wire:navigate class="font-medium">{{ $asset->name }}</flux:link>
+                                    </div>
                                     <flux:text size="sm">{{ $asset->type->label() }}</flux:text>
                                 </div>
 
@@ -206,7 +273,10 @@ class extends Component {
                                     />
                                 </div>
 
-                                <div class="text-end">
+                                {{-- shrink-0, or the amount is squeezed narrower than itself and,
+                                     being text-end and unbreakable, spills leftwards over the
+                                     name instead of the name truncating. --}}
+                                <div class="shrink-0 text-end">
                                     <div class="font-medium tabular-nums text-zinc-900 dark:text-zinc-100">
                                         {{ Money::kr($this->latestValue($asset)) }}
                                     </div>
@@ -218,10 +288,20 @@ class extends Component {
                                 <flux:button
                                     variant="subtle"
                                     size="sm"
+                                    icon="pencil-square"
+                                    class="opacity-40 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                                    wire:click="edit({{ $asset->id }})"
+                                    :aria-label="__('Edit :name', ['name' => $asset->name])"
+                                />
+
+                                <flux:button
+                                    variant="subtle"
+                                    size="sm"
                                     icon="trash"
                                     class="opacity-40 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                     wire:click="delete({{ $asset->id }})"
                                     wire:confirm="{{ __('Delete :name and all its values?', ['name' => $asset->name]) }}"
+                                    :aria-label="__('Delete :name', ['name' => $asset->name])"
                                 />
                             </div>
                         @endforeach
@@ -230,4 +310,29 @@ class extends Component {
             </div>
         @endforeach
     </div>
+
+    <flux:modal name="edit-asset" class="w-full max-w-md" focusable>
+        <form wire:submit="saveEdit" class="space-y-6">
+            <div>
+                <flux:heading size="lg">{{ __('Edit') }}</flux:heading>
+                <flux:subheading>
+                    {{ __('Renaming or re-typing keeps every value already recorded against it.') }}
+                </flux:subheading>
+            </div>
+
+            <flux:input wire:model="editingName" :label="__('Name')" />
+
+            <flux:select wire:model="editingType" :label="__('Type')" :placeholder="__('Choose a type')">
+                <x-asset-type-options />
+            </flux:select>
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="filled">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+
+                <flux:button variant="primary" type="submit">{{ __('Save') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
 </section>
