@@ -4,6 +4,7 @@ use App\Enums\AssetType;
 use App\Models\Asset;
 use App\Models\AssetValue;
 use App\Support\Money;
+use App\Support\Portfolio;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -41,7 +42,7 @@ class extends Component {
     #[Computed]
     public function assets(): Collection
     {
-        return $this->allAssets()->reject(fn (Asset $asset): bool => $asset->type->isLiability());
+        return $this->portfolio->owned();
     }
 
     /**
@@ -52,7 +53,7 @@ class extends Component {
     #[Computed]
     public function liabilities(): Collection
     {
-        return $this->allAssets()->filter(fn (Asset $asset): bool => $asset->type->isLiability());
+        return $this->portfolio->owed();
     }
 
     /**
@@ -61,7 +62,7 @@ class extends Component {
     #[Computed]
     public function assetsTotal(): float
     {
-        return $this->assets->sum(fn (Asset $asset): float => $this->latestValue($asset));
+        return $this->portfolio->ownedTotal(now()->year, now()->month);
     }
 
     /**
@@ -70,7 +71,7 @@ class extends Component {
     #[Computed]
     public function liabilitiesTotal(): float
     {
-        return $this->liabilities->sum(fn (Asset $asset): float => $this->latestValue($asset));
+        return $this->portfolio->owedTotal(now()->year, now()->month);
     }
 
     /**
@@ -78,17 +79,29 @@ class extends Component {
      */
     public function latestValue(Asset $asset): float
     {
-        return (float) ($asset->values->last()?->value ?? 0);
+        return $asset->valueAt(now()->year, now()->month);
     }
 
     /**
-     * The value history for one asset's sparkline.
+     * The value history for one asset's sparkline, clipped to the charted window.
+     *
+     * Clipped here rather than in the query: the totals need the whole history to find
+     * an asset's last recorded value, and a house valued eighteen months ago has one
+     * outside any twelve-month window. Loading everything and slicing in PHP keeps the
+     * sparkline short without letting the window decide what the asset is worth.
      *
      * @return array<int, float>
      */
     public function history(Asset $asset): array
     {
-        return $asset->values->map(fn (AssetValue $value): float => (float) $value->value)->all();
+        $earliest = now()->subMonths($this->months - 1)->startOfMonth();
+        $cutoff = $earliest->year * 100 + $earliest->month;
+
+        return $asset->values
+            ->filter(fn (AssetValue $value): bool => $value->year * 100 + $value->month >= $cutoff)
+            ->map(fn (AssetValue $value): float => (float) $value->value)
+            ->values()
+            ->all();
     }
 
     /**
@@ -176,7 +189,7 @@ class extends Component {
      */
     protected function forgetAssets(): void
     {
-        unset($this->allAssets, $this->assets, $this->liabilities, $this->assetsTotal, $this->liabilitiesTotal);
+        unset($this->portfolio, $this->assets, $this->liabilities, $this->assetsTotal, $this->liabilitiesTotal);
     }
 
     /**
@@ -192,26 +205,18 @@ class extends Component {
     }
 
     /**
-     * Every asset belonging to the current user, loaded once per request.
+     * Everything the user owns and owes, loaded once per request.
      *
      * The values are eager loaded because every row draws a sparkline and a current
-     * value - without ->with() that is a query per asset, twice over.
+     * value - without them that is a query per asset, twice over. The whole history is
+     * loaded, not just the sparkline's window; see history() for why.
      *
-     * @return Collection<int, Asset>
+     * @see \App\Support\Portfolio
      */
     #[Computed]
-    protected function allAssets(): Collection
+    protected function portfolio(): Portfolio
     {
-        $earliest = now()->subMonths($this->months - 1)->startOfMonth();
-
-        return Auth::user()->assets()
-            ->orderBy('name')
-            ->with(['values' => fn ($query) => $query
-                ->whereRaw('(year * 100 + month) >= ?', [$earliest->year * 100 + $earliest->month])
-                ->orderBy('year')
-                ->orderBy('month'),
-            ])
-            ->get();
+        return Portfolio::for(Auth::user());
     }
 }; ?>
 

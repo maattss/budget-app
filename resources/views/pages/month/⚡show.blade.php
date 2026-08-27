@@ -1,9 +1,8 @@
 <?php
 
 use App\Models\Asset;
-use App\Models\AssetValue;
-use App\Models\MonthlyFinance;
 use App\Support\Money;
+use App\Support\Portfolio;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
@@ -31,7 +30,7 @@ new #[Title('Month')] class extends Component {
     public array $values = [];
 
     /**
-     * Start on the current month.
+     * Start on the current month, or on whichever month the url asks for.
      */
     public function mount(): void
     {
@@ -40,8 +39,33 @@ new #[Title('Month')] class extends Component {
         $this->year ??= $now->year;
         $this->month ??= $now->month;
 
+        // #[Url] means these two arrive from the address bar, so they are user input and
+        // get checked like any other. ?month=99 used to be taken at face value, and
+        // Carbon happily overflowed it: one click of "previous month" from month 99 of
+        // 2026 landed on February 2034.
+        if (! $this->isRealMonth($this->year, $this->month)) {
+            $this->year = $now->year;
+            $this->month = $now->month;
+        }
+
         $this->loadCashFlow();
         $this->loadAssetValues();
+    }
+
+    /**
+     * Whether a year and month pair names a month a person could mean.
+     *
+     * The year bounds are deliberately loose. This rejects nonsense, it does not decide
+     * how far back someone is allowed to record - a user back-filling a decade of
+     * history is doing something reasonable, and being bounced to the current month for
+     * it would be the app second-guessing them.
+     */
+    protected function isRealMonth(int $year, int $month): bool
+    {
+        return $month >= 1
+            && $month <= 12
+            && $year >= 1900
+            && $year <= 2200;
     }
 
     /**
@@ -124,6 +148,21 @@ new #[Title('Month')] class extends Component {
     }
 
     /**
+     * Everything the user owns and owes.
+     *
+     * This page needs the owned/owed split for display and nothing else from Portfolio:
+     * its totals come from what is currently typed into the form, not from what is
+     * stored, so that every figure moves as you type.
+     *
+     * @see \App\Support\Portfolio
+     */
+    #[Computed]
+    public function portfolio(): Portfolio
+    {
+        return Portfolio::for(Auth::user());
+    }
+
+    /**
      * Every asset belonging to the current user, in a stable display order.
      *
      * The form holds one field per asset whichever group it renders in, so loading and
@@ -134,7 +173,7 @@ new #[Title('Month')] class extends Component {
     #[Computed]
     public function allAssets(): Collection
     {
-        return Auth::user()->assets()->orderBy('name')->get();
+        return $this->portfolio->all();
     }
 
     /**
@@ -145,7 +184,7 @@ new #[Title('Month')] class extends Component {
     #[Computed]
     public function assets(): Collection
     {
-        return $this->allAssets->reject(fn (Asset $asset): bool => $asset->type->isLiability());
+        return $this->portfolio->owned();
     }
 
     /**
@@ -156,21 +195,26 @@ new #[Title('Month')] class extends Component {
     #[Computed]
     public function liabilities(): Collection
     {
-        return $this->allAssets->filter(fn (Asset $asset): bool => $asset->type->isLiability());
+        return $this->portfolio->owed();
     }
 
     /**
-     * Fill $values from asset_values for the selected month.
+     * Fill $values from what was recorded for the selected month.
+     *
+     * Read from the already-loaded histories rather than queried per month: the
+     * portfolio arrives with every value attached, so stepping between months costs no
+     * further round trip.
+     *
+     * recordedValueIn(), not valueAt(). A field must show what the user actually typed
+     * for this month and stay empty otherwise - prefilling with a carried-forward figure
+     * would then let one unedited visit to an old month save a guess as a record.
      */
     public function loadAssetValues(): void
     {
-        $stored = AssetValue::whereIn('asset_id', $this->allAssets->pluck('id'))
-            ->where('year', $this->year)
-            ->where('month', $this->month)
-            ->pluck('value', 'asset_id');
-
         $this->values = $this->allAssets
-            ->mapWithKeys(fn (Asset $asset) => [$asset->id => Money::input($stored->get($asset->id))])
+            ->mapWithKeys(fn (Asset $asset) => [
+                $asset->id => Money::input($asset->recordedValueIn($this->year, $this->month)?->value),
+            ])
             ->all();
     }
 
@@ -183,20 +227,40 @@ new #[Title('Month')] class extends Component {
 
         $this->validate([
             'values.*' => ['nullable', 'numeric', 'min:0'],
+        ], [
+            // The field is labelled with the asset's name, so the default message - "The
+            // values.7 field must be at least 0" - would introduce an array index the
+            // user has never seen and cannot map back to a row.
+            'values.*.numeric' => __('Enter an amount, or leave this blank.'),
+            'values.*.min' => __('An amount cannot be negative.'),
         ]);
 
         foreach ($this->allAssets as $asset) {
             $assetValue = $this->values[$asset->id] ?? '';
 
-            if ($assetValue  === '') {
+            // Blank means "there is no figure for this month", which is a different
+            // claim from the one already stored - so the row goes. Skipping empties
+            // instead made clearing a field a silent no-op: the user was told the save
+            // succeeded and the old number came straight back on reload. Now that values
+            // carry forward, a wrong figure left in place propagates onwards too.
+            if ($assetValue === '') {
+                $asset->values()
+                    ->where('year', $this->year)
+                    ->where('month', $this->month)
+                    ->delete();
+
                 continue;
             }
 
             $asset->values()->updateOrCreate(
                 ['year' => $this->year, 'month' => $this->month],
-                ['value' => $assetValue ]
+                ['value' => $assetValue]
             );
         }
+
+        // The loaded histories are now a request older than the database, and
+        // loadAssetValues() below reads them. Drop the memo so it re-reads.
+        unset($this->portfolio, $this->allAssets, $this->assets, $this->liabilities);
 
         $this->loadAssetValues();
 
