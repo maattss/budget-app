@@ -36,10 +36,48 @@ class Asset extends Model
     }
 
     /**
+     * This asset's recorded values, oldest first.
+     *
+     * The ordering lives on the relation rather than at each call site so that
+     * valueAt() below can rely on it however the relation was loaded - eagerly, lazily,
+     * or already in memory. A method whose correctness depends on the caller having
+     * remembered an orderBy is a method that will eventually be called wrongly.
+     *
      * @return HasMany<AssetValue, $this>
      */
     public function values(): HasMany
     {
-        return $this->hasMany(AssetValue::class);
+        return $this->hasMany(AssetValue::class)
+            ->orderBy('year')
+            ->orderBy('month');
+    }
+
+    /**
+     * What this asset was worth in a given month, carrying the last known value forward.
+     *
+     * A recorded value is a standing claim about worth, not a statement about one
+     * calendar month: a house valued in March is still worth roughly that in August,
+     * and nobody re-appraises a house monthly. Reading only the exact month meant net
+     * worth collapsed to zero on the first of every month.
+     *
+     * Forward only, never backward. Before an asset's first recorded value it did not
+     * exist as far as this app knows, and back-filling would rewrite history - a house
+     * bought in June would appear to have been owned all year. Hence zero, which is the
+     * honest answer for "you did not own this yet".
+     *
+     * Reads the loaded collection rather than querying, so a page that has eager loaded
+     * values can call this for every asset and every month without a single extra query.
+     */
+    public function valueAt(int $year, int $month): float
+    {
+        $target = $year * 100 + $month;
+
+        foreach ($this->values->reverse() as $value) {
+            if ($value->year * 100 + $value->month <= $target) {
+                return (float) $value->value;
+            }
+        }
+
+        return 0.0;
     }
 }

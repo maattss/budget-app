@@ -78,17 +78,29 @@ class extends Component {
      */
     public function latestValue(Asset $asset): float
     {
-        return (float) ($asset->values->last()?->value ?? 0);
+        return $asset->valueAt(now()->year, now()->month);
     }
 
     /**
-     * The value history for one asset's sparkline.
+     * The value history for one asset's sparkline, clipped to the charted window.
+     *
+     * Clipped here rather than in the query: the totals need the whole history to find
+     * an asset's last recorded value, and a house valued eighteen months ago has one
+     * outside any twelve-month window. Loading everything and slicing in PHP keeps the
+     * sparkline short without letting the window decide what the asset is worth.
      *
      * @return array<int, float>
      */
     public function history(Asset $asset): array
     {
-        return $asset->values->map(fn (AssetValue $value): float => (float) $value->value)->all();
+        $earliest = now()->subMonths($this->months - 1)->startOfMonth();
+        $cutoff = $earliest->year * 100 + $earliest->month;
+
+        return $asset->values
+            ->filter(fn (AssetValue $value): bool => $value->year * 100 + $value->month >= $cutoff)
+            ->map(fn (AssetValue $value): float => (float) $value->value)
+            ->values()
+            ->all();
     }
 
     /**
@@ -195,22 +207,17 @@ class extends Component {
      * Every asset belonging to the current user, loaded once per request.
      *
      * The values are eager loaded because every row draws a sparkline and a current
-     * value - without ->with() that is a query per asset, twice over.
+     * value - without ->with() that is a query per asset, twice over. The whole history
+     * is loaded, not just the sparkline's window; see history() for why.
      *
      * @return Collection<int, Asset>
      */
     #[Computed]
     protected function allAssets(): Collection
     {
-        $earliest = now()->subMonths($this->months - 1)->startOfMonth();
-
         return Auth::user()->assets()
             ->orderBy('name')
-            ->with(['values' => fn ($query) => $query
-                ->whereRaw('(year * 100 + month) >= ?', [$earliest->year * 100 + $earliest->month])
-                ->orderBy('year')
-                ->orderBy('month'),
-            ])
+            ->with('values')
             ->get();
     }
 }; ?>

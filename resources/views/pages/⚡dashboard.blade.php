@@ -72,26 +72,26 @@ new #[Title('Dashboard')] class extends Component {
     }
 
     /**
-     * The user's assets with every value from the charted window eager loaded.
+     * The user's assets with their whole value history eager loaded.
      *
      * One query for the assets and one for their values, whatever the asset count -
      * netWorthFor() and the allocation both read ->values per asset, which without the
      * eager load would be a query per asset per call.
+     *
+     * The history is deliberately unbounded rather than clipped to the charted window.
+     * Asset::valueAt() carries the last recorded value forward, so an asset valued two
+     * years ago still counts today - and clipping the load to twelve months would hide
+     * exactly the row it needs to find. A personal budget accrues twelve rows per asset
+     * per year; the whole history is smaller than the window query it replaces.
      *
      * @return Collection<int, Asset>
      */
     #[Computed]
     public function allAssets(): Collection
     {
-        $earliest = now()->subMonths($this->months - 1)->startOfMonth();
-
         return Auth::user()->assets()
             ->orderBy('name')
-            ->with(['values' => fn ($query) => $query
-                ->whereRaw('(year * 100 + month) >= ?', [$earliest->year * 100 + $earliest->month])
-                ->orderBy('year')
-                ->orderBy('month'),
-            ])
+            ->with('values')
             ->get();
     }
 
@@ -130,7 +130,7 @@ new #[Title('Dashboard')] class extends Component {
     {
         return array_map(fn (array $month): array => [
             'label' => $month['label'],
-            'value' => $this->hasValuesIn($month['year'], $month['month'])
+            'value' => $this->hasAnyValueBy($month['year'], $month['month'])
                 ? $this->netWorthFor($month['year'], $month['month'])
                 : null,
         ], $this->window);
@@ -158,16 +158,23 @@ new #[Title('Dashboard')] class extends Component {
     }
 
     /**
-     * Whether any asset has a recorded value in the given month.
+     * Whether anything at all had been recorded by the end of the given month.
+     *
+     * The net worth series is null before this point and a number after it. That line
+     * is where "you had nothing" and "you had not started tracking" divide: charting the
+     * months before the first entry as zero would claim the user was broke, when the
+     * data only says they had not begun. After the first entry every month has a
+     * defined net worth, because valueAt() carries values forward - so the series is
+     * continuous from there rather than gapped wherever a month went unrecorded.
      */
-    protected function hasValuesIn(int $year, int $month): bool
+    protected function hasAnyValueBy(int $year, int $month): bool
     {
-        foreach ($this->allAssets as $asset) {
-            $hit = $asset->values->first(
-                fn (AssetValue $value): bool => $value->year === $year && $value->month === $month
-            );
+        $target = $year * 100 + $month;
 
-            if ($hit !== null) {
+        foreach ($this->allAssets as $asset) {
+            $first = $asset->values->first();
+
+            if ($first !== null && $first->year * 100 + $first->month <= $target) {
                 return true;
             }
         }
@@ -333,15 +340,11 @@ new #[Title('Dashboard')] class extends Component {
     }
 
     /**
-     * One asset's value in one month, or zero if none was entered.
+     * One asset's value in one month, carrying the last recorded value forward.
      */
     protected function valueOf(Asset $asset, int $year, int $month): float
     {
-        $value = $asset->values->first(
-            fn (AssetValue $value): bool => $value->year === $year && $value->month === $month
-        );
-
-        return (float) ($value?->value ?? 0);
+        return $asset->valueAt($year, $month);
     }
 }; ?>
 
